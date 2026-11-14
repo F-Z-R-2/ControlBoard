@@ -114,7 +114,11 @@ export default async function LiveSessionPage({
         </Card>
       ) : (
         <div className="h-[72vh] min-h-[520px]">
-          <LiveRoom roomName={liveSession.roomName} title={liveSession.title} />
+          <LiveRoom
+            roomName={liveSession.roomName}
+            title={liveSession.title}
+            leaveHref={`/courses/${course.id}/live`}
+          />
         </div>
       )}
 

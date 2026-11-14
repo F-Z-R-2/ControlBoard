@@ -11,6 +11,24 @@ export const metadata: Metadata = {
   title: "Iniciar sesión",
 };
 
+const demoAccounts = [
+  {
+    label: "Profesor",
+    email: "instructor@controlboard.dev",
+    password: "Profe123!",
+  },
+  {
+    label: "Estudiante",
+    email: "estudiante@controlboard.dev",
+    password: "Estudiante123!",
+  },
+  {
+    label: "Admin",
+    email: "admin@controlboard.dev",
+    password: "Admin123!",
+  },
+];
+
 export default async function LoginPage({
   searchParams,
 }: {
@@ -65,20 +83,33 @@ export default async function LoginPage({
 
       <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
         <p className="font-medium text-slate-700">Cuentas de demostración</p>
-        <ul className="mt-2 space-y-1">
-          <li>
-            Profesor: <span className="font-mono">instructor@controlboard.dev</span> /{" "}
-            <span className="font-mono">Profe123!</span>
-          </li>
-          <li>
-            Estudiante: <span className="font-mono">estudiante@controlboard.dev</span> /{" "}
-            <span className="font-mono">Estudiante123!</span>
-          </li>
-          <li>
-            Admin: <span className="font-mono">admin@controlboard.dev</span> /{" "}
-            <span className="font-mono">Admin123!</span>
-          </li>
-        </ul>
+        <p className="mt-1 text-slate-500">
+          Haz clic en una cuenta para entrar directamente.
+        </p>
+        <div className="mt-3 space-y-2">
+          {demoAccounts.map((account) => (
+            <form key={account.email} action={loginAction}>
+              <input type="hidden" name="email" value={account.email} />
+              <input type="hidden" name="password" value={account.password} />
+              <button
+                type="submit"
+                className="flex w-full items-center justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-left transition-colors hover:border-indigo-500 hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+              >
+                <span>
+                  <span className="block text-xs font-medium text-slate-700">
+                    {account.label}
+                  </span>
+                  <span className="block font-mono text-[11px] text-slate-500">
+                    {account.email}
+                  </span>
+                </span>
+                <span className="text-xs font-medium text-indigo-600">
+                  Entrar →
+                </span>
+              </button>
+            </form>
+          ))}
+        </div>
       </div>
     </AuthShell>
   );
