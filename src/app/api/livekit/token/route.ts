@@ -60,9 +60,10 @@ export async function GET(request: NextRequest) {
   }
 
   const token = new AccessToken(apiKey, apiSecret, {
-    identity: session.user.id,
+    identity: `${session.user.id}:${crypto.randomUUID()}`,
     name: session.user.name ?? session.user.email ?? "Usuario",
     ttl: "2h",
+    metadata: JSON.stringify({ userId: session.user.id }),
   });
   token.addGrant({
     roomJoin: true,
