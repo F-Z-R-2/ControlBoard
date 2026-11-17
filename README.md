@@ -156,3 +156,4 @@ src/
 - No hay notificaciones por correo, foros ni calendario.
 - No hay rate limiting en login ni en las rutas API.
 - Las contraseñas demo del seed no deben usarse en producción.
+# sitema-manuel-scorza-demo
