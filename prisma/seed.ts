@@ -108,6 +108,7 @@ async function main() {
   for (const account of [
     { email: "superadmin@controlboard.dev", name: "Superadministración", role: Role.SUPER_ADMIN, password: "SuperAdmin123!" },
     { email: "secretaria@controlboard.dev", name: "Secretaría", role: Role.SECRETARY, password: "Secretaria123!" },
+    { email: "psicologia@controlboard.dev", name: "Psicología", role: Role.PSYCHOLOGIST, password: "Psicologia123!" },
   ]) {
     await prisma.user.upsert({
       where: { email: account.email },

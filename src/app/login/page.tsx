@@ -37,6 +37,11 @@ const demoAccounts = [
     email: "secretaria@controlboard.dev",
     password: "Secretaria123!",
   },
+  {
+    label: "Psicología",
+    email: "psicologia@controlboard.dev",
+    password: "Psicologia123!",
+  },
 ];
 
 export default async function LoginPage({
