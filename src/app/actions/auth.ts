@@ -16,7 +16,7 @@ const registerSchema = z.object({
   name: z.string().trim().min(2, "Escribe tu nombre completo"),
   email: z.string().email("Correo inválido"),
   password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres"),
-  role: z.enum(["STUDENT"]).default("STUDENT"),
+  role: z.enum(["STUDENT", "INSTRUCTOR", "SECRETARY", "PSYCHOLOGIST"]).default("STUDENT"),
 });
 
 function fail(path: string, message: string): never {
