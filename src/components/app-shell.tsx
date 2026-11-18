@@ -73,7 +73,7 @@ function Sidebar({
         />
       ) : null}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-[208px] shrink-0 flex-col bg-[#242424] text-white transition-transform duration-200 md:static md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-[208px] shrink-0 flex-col bg-[#242424] text-white transition-transform duration-200 md:translate-x-0 ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -180,7 +180,7 @@ export function AppShell({
         onClose={() => setMenuOpen(false)}
         pathname={pathname}
       />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col md:ml-[208px]">
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-[#dedede] bg-white px-4 md:hidden">
           <div className="flex items-center gap-3">
             <button
