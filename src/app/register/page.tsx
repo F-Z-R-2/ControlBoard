@@ -22,7 +22,7 @@ export default async function RegisterPage({
   return (
     <AuthShell
       title="Crear cuenta"
-      description="Regístrate como estudiante o profesor para probar el campus."
+      description="Crea tu cuenta de estudiante. Las cuentas del personal las gestiona administración."
       footer={
         <>
           ¿Ya tienes cuenta?{" "}
@@ -74,7 +74,6 @@ export default async function RegisterPage({
           <Label htmlFor="role">Quiero entrar como</Label>
           <Select id="role" name="role" defaultValue="STUDENT">
             <option value="STUDENT">Estudiante</option>
-            <option value="INSTRUCTOR">Profesor</option>
           </Select>
         </div>
         <Button type="submit" className="w-full">

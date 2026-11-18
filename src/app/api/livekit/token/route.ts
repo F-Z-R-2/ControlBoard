@@ -1,11 +1,12 @@
 import { AccessToken } from "livekit-server-sdk";
 import type { NextRequest } from "next/server";
-import { auth } from "@/auth";
+import { getCurrentUser } from "@/lib/permissions";
+import { isAdmin } from "@/lib/roles";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(request: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getCurrentUser();
+  if (!user) {
     return Response.json({ error: "No autenticado" }, { status: 401 });
   }
 
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest) {
       course: {
         include: {
           enrollments: {
-            where: { userId: session.user.id },
+            where: { userId: user.id },
             select: { id: true },
           },
         },
@@ -33,8 +34,8 @@ export async function GET(request: NextRequest) {
   }
 
   const isManager =
-    liveSession.course.instructorId === session.user.id ||
-    session.user.role === "ADMIN";
+    liveSession.course.instructorId === user.id ||
+    isAdmin(user.role);
   const enrolled = liveSession.course.enrollments.length > 0;
 
   if (!isManager && !enrolled) {
@@ -60,8 +61,8 @@ export async function GET(request: NextRequest) {
   }
 
   const token = new AccessToken(apiKey, apiSecret, {
-    identity: session.user.id,
-    name: session.user.name ?? session.user.email ?? "Usuario",
+    identity: user.id,
+    name: user.name ?? user.email ?? "Usuario",
     ttl: "2h",
   });
   token.addGrant({

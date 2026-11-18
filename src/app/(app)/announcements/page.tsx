@@ -1,3 +1,4 @@
+import { isAdmin as isAdministrator } from "@/lib/roles";
 import { ArrowRight, Megaphone } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -22,7 +23,7 @@ export default async function AnnouncementsPage() {
     orderBy: { createdAt: "desc" },
   });
 
-  const canManage = user.role === "INSTRUCTOR" || user.role === "ADMIN";
+  const canManage = user.role === "INSTRUCTOR" || isAdministrator(user.role);
 
   return (
     <div className="flex min-h-full flex-col">

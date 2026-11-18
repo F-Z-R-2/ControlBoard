@@ -21,6 +21,8 @@ import {
 } from "@/components/pending-tasks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { canAccessPsychology } from "@/lib/psychology";
+import { isStaff } from "@/lib/roles";
 import { initials, roleLabel } from "@/lib/utils";
 
 type ShellUser = {
@@ -34,6 +36,7 @@ type ShellUser = {
 const navigation = [
   { label: "Página de la institución", icon: Building, href: "/dashboard" },
   { label: "Cursos", icon: BookOpen, href: "/courses" },
+  { label: "Asistencia", icon: ClipboardList, href: "/attendance" },
   { label: "Calendario", icon: CalendarDays, href: "/calendar" },
   { label: "Anuncios", icon: MessageSquare, href: "/announcements" },
   { label: "Calificaciones", icon: ClipboardList, href: "/grades" },
@@ -110,7 +113,7 @@ function Sidebar({
           aria-label="Navegación principal"
           className="mt-3 flex-1 space-y-0.5 overflow-y-auto px-2"
         >
-          {navigation.map(({ href, icon: Icon, label }) => {
+          {[...navigation, ...(canAccessPsychology(user.role) ? [{ label: "Psicología", icon: MessageSquare, href: "/psychology" }] : []), ...(isStaff(user.role) ? [{ label: "Escalas de notas", icon: ClipboardList, href: "/grading-settings" }, { label: "Gestión académica", icon: BookOpen, href: "/academics" }, { label: user.role === "SECRETARY" ? "Secretaría" : "Administración", icon: Settings, href: "/administration" }] : [])].map(({ href, icon: Icon, label }) => {
             const active = isActive(pathname, href);
             return (
               <Link

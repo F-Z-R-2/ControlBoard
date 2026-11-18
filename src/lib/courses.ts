@@ -1,9 +1,10 @@
+import { isAdmin as isAdministrator } from "@/lib/roles";
 import { prisma } from "@/lib/prisma";
 
 export async function getAccessibleCourses(user: { id: string; role: string }) {
   return prisma.course.findMany({
     where:
-      user.role === "ADMIN"
+      isAdministrator(user.role)
         ? {}
         : {
             OR: [

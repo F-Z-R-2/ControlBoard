@@ -33,6 +33,9 @@ export function initials(name: string) {
 
 export function roleLabel(role: string) {
   const labels: Record<string, string> = {
+    PSYCHOLOGIST: "Psicología",
+    SUPER_ADMIN: "Superadministrador",
+    SECRETARY: "Secretaría",
     ADMIN: "Administrador",
     INSTRUCTOR: "Profesor",
     STUDENT: "Estudiante",

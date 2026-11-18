@@ -1,3 +1,4 @@
+import { isAdmin as isAdministrator } from "@/lib/roles";
 import { endOfDay, format, startOfDay, subDays } from "date-fns";
 import { es } from "date-fns/locale";
 import type { ReactNode } from "react";
@@ -11,7 +12,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   const courses = await prisma.course.findMany({
     where:
-      user.role === "ADMIN"
+      isAdministrator(user.role)
         ? {}
         : {
             OR: [

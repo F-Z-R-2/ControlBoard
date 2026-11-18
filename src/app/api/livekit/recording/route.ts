@@ -6,7 +6,8 @@ import {
 } from "livekit-server-sdk";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { auth } from "@/auth";
+import { getCurrentUser } from "@/lib/permissions";
+import { isAdmin } from "@/lib/roles";
 import { prisma } from "@/lib/prisma";
 
 const bodySchema = z.object({
@@ -28,8 +29,8 @@ function egressClient() {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getCurrentUser();
+  if (!user) {
     return Response.json({ error: "No autenticado" }, { status: 401 });
   }
 
@@ -48,8 +49,8 @@ export async function POST(request: NextRequest) {
   }
 
   const isManager =
-    liveSession.course.instructorId === session.user.id ||
-    session.user.role === "ADMIN";
+    liveSession.course.instructorId === user.id ||
+    isAdmin(user.role);
   if (!isManager) {
     return Response.json({ error: "Solo el docente puede grabar" }, { status: 403 });
   }

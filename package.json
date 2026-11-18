@@ -11,7 +11,13 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
-    "db:seed": "prisma db seed"
+    "db:seed": "prisma db seed",
+    "test:roles": "node --import tsx --test tests/roles.test.ts",
+    "admin:bootstrap": "node --env-file-if-exists=.env --import tsx scripts/bootstrap-admin.ts",
+    "test:attendance": "node --import tsx --test tests/attendance.test.ts",
+    "test:academics": "node --import tsx --test tests/academics.test.ts",
+    "test:grading": "node --import tsx --test tests/grading.test.ts",
+    "test:psychology": "node --import tsx --test tests/psychology.test.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

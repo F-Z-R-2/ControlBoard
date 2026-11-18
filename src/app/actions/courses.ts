@@ -1,4 +1,6 @@
 "use server";
+import { isAdmin as isAdministrator } from "@/lib/roles";
+
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -19,7 +21,7 @@ function fail(message: string): never {
 
 export async function createCourseAction(formData: FormData) {
   const user = await requireUser();
-  if (user.role !== "INSTRUCTOR" && user.role !== "ADMIN") {
+  if (user.role !== "INSTRUCTOR" && !isAdministrator(user.role)) {
     fail("Solo profesores y administradores pueden crear cursos");
   }
 

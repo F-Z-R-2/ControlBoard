@@ -9,6 +9,9 @@ datasource db {
 }
 
 enum Role {
+  PSYCHOLOGIST
+  SUPER_ADMIN
+  SECRETARY
   ADMIN
   INSTRUCTOR
   STUDENT
@@ -43,11 +46,20 @@ model User {
   email         String    @unique
   emailVerified DateTime?
   image         String?
+  isActive      Boolean   @default(true)
   passwordHash  String?
   role          Role      @default(STUDENT)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
+  psychologyStudentCases PsychologyCase[] @relation("PsychologyStudent")
+  psychologyAssignedCases PsychologyCase[] @relation("PsychologyProfessional")
+  psychologyOpenedCases PsychologyCase[] @relation("PsychologyOpenedBy")
+  psychologyNotes PsychologyNote[]
+  periodGrades        PeriodGrade[] @relation("StudentPeriodGrades")
+  gradesRecorded      PeriodGrade[] @relation("PeriodGradeRecorder")
+  attendance          Attendance[] @relation("StudentAttendance")
+  attendanceRecorded  Attendance[] @relation("AttendanceRecorder")
   accounts            Account[]
   sessions            Session[]
   coursesTaught       Course[]       @relation("CourseInstructor")
@@ -101,11 +113,17 @@ model Course {
   description  String   @default("")
   term         String
   instructorId String
+  sectionId    String?
+  academicPeriodId String?
+  section      SchoolSection? @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  academicPeriod AcademicPeriod? @relation(fields: [academicPeriodId], references: [id], onDelete: Restrict)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   instructor User @relation("CourseInstructor", fields: [instructorId], references: [id], onDelete: Cascade)
 
+  periodGrades  PeriodGrade[]
+  attendance    Attendance[]
   enrollments   Enrollment[]
   announcements Announcement[]
   contentItems  ContentItem[]
@@ -212,4 +230,185 @@ model Recording {
   endedAt       DateTime?
 
   liveSession LiveSession @relation(fields: [liveSessionId], references: [id], onDelete: Cascade)
+}
+
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+model Attendance {
+  id           String           @id @default(cuid())
+  courseId     String
+  studentId    String
+  date         DateTime         @db.Date
+  status       AttendanceStatus
+  note         String           @default("")
+  recordedById String
+  version      Int              @default(1)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  course     Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  student    User   @relation("StudentAttendance", fields: [studentId], references: [id], onDelete: Cascade)
+  recordedBy User   @relation("AttendanceRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+
+  @@unique([courseId, studentId, date])
+  @@index([courseId, date])
+  @@index([studentId, date])
+}
+
+
+enum SchoolLevel {
+  INITIAL
+  PRIMARY
+  SECONDARY
+}
+
+model AcademicYear {
+  id        String @id @default(cuid())
+  name      String @unique
+  startsOn  DateTime @db.Date
+  endsOn    DateTime @db.Date
+  isClosed  Boolean @default(false)
+  gradingScales GradingScale[]
+  periods   AcademicPeriod[]
+  sections  SchoolSection[]
+}
+
+model AcademicPeriod {
+  id        String @id @default(cuid())
+  yearId    String
+  name      String
+  startsOn  DateTime @db.Date
+  endsOn    DateTime @db.Date
+  year      AcademicYear @relation(fields: [yearId], references: [id], onDelete: Restrict)
+  courses   Course[]
+  grades    PeriodGrade[]
+
+  @@unique([yearId, name])
+}
+
+model SchoolGrade {
+  id        String @id @default(cuid())
+  level     SchoolLevel
+  name      String
+  position  Int @default(1)
+  sections  SchoolSection[]
+
+  @@unique([level, name])
+}
+
+model SchoolSection {
+  id        String @id @default(cuid())
+  yearId    String
+  gradeId   String
+  name      String
+  year      AcademicYear @relation(fields: [yearId], references: [id], onDelete: Restrict)
+  grade     SchoolGrade @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+  courses   Course[]
+
+  @@unique([yearId, gradeId, name])
+}
+
+
+model GradingScale {
+  id      String @id @default(cuid())
+  yearId  String
+  level   SchoolLevel
+  config  Json
+  version Int @default(1)
+  year    AcademicYear @relation(fields: [yearId], references: [id], onDelete: Restrict)
+
+  @@unique([yearId, level])
+}
+
+model PeriodGrade {
+  id             String @id @default(cuid())
+  courseId       String
+  periodId       String
+  studentId      String
+  value          String
+  scaleSnapshot  Json
+  comment        String @default("")
+  recordedById   String
+  version        Int @default(1)
+  updatedAt      DateTime @updatedAt
+  course         Course @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  period         AcademicPeriod @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  student        User @relation("StudentPeriodGrades", fields: [studentId], references: [id], onDelete: Restrict)
+  recordedBy     User @relation("PeriodGradeRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+
+  @@unique([courseId, periodId, studentId])
+  @@index([studentId, periodId])
+}
+
+
+enum PsychologyCategory {
+  LEARNING
+  COEXISTENCE
+  EMOTIONAL
+  FAMILY
+  OTHER
+}
+
+enum PsychologyCaseStatus {
+  OPEN
+  FOLLOW_UP
+  CLOSED
+}
+
+enum PsychologyAppointmentStatus {
+  SCHEDULED
+  ATTENDED
+  CANCELLED
+  NO_SHOW
+}
+
+model PsychologyCase {
+  id             String @id @default(cuid())
+  studentId      String @unique
+  psychologistId String
+  openedById     String
+  category       PsychologyCategory
+  status         PsychologyCaseStatus @default(OPEN)
+  version        Int @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  student        User @relation("PsychologyStudent", fields: [studentId], references: [id], onDelete: Restrict)
+  psychologist   User @relation("PsychologyProfessional", fields: [psychologistId], references: [id], onDelete: Restrict)
+  openedBy       User @relation("PsychologyOpenedBy", fields: [openedById], references: [id], onDelete: Restrict)
+  notes          PsychologyNote[]
+  appointments   PsychologyAppointment[]
+
+  @@index([psychologistId, status])
+}
+
+model PsychologyNote {
+  id         String @id @default(cuid())
+  caseId     String
+  authorId   String
+  attendedOn DateTime @db.Date
+  body       String
+  createdAt  DateTime @default(now())
+  case       PsychologyCase @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  author     User @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([caseId, attendedOn])
+}
+
+model PsychologyAppointment {
+  id        String @id @default(cuid())
+  caseId    String
+  startsAt  DateTime
+  endsAt    DateTime
+  status    PsychologyAppointmentStatus @default(SCHEDULED)
+  version   Int @default(1)
+  case      PsychologyCase @relation(fields: [caseId], references: [id], onDelete: Restrict)
+
+  @@index([caseId, startsAt])
+  @@index([status, startsAt])
 }

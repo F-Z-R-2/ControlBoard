@@ -41,7 +41,9 @@ export default async function CourseLayout({
             </Link>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <Badge>{course.code}</Badge>
-              <Badge variant="slate">{course.term}</Badge>
+              <Badge variant="slate">{course.section?.year.name ?? course.term}</Badge>
+              {course.section && <Badge variant="slate">{course.section.grade.name} · {course.section.name}</Badge>}
+              {course.academicPeriod && <Badge variant="slate">{course.academicPeriod.name}</Badge>}
               {canManage ? <Badge variant="green">Docente</Badge> : null}
             </div>
             <h1 className="mt-2 font-serif text-[27px] font-normal text-[#242424] sm:text-[31px]">

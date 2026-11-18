@@ -1,3 +1,4 @@
+import { isAdmin as isAdministrator } from "@/lib/roles";
 import type { Metadata } from "next";
 import { Alert } from "@/components/ui/alert";
 import { CoursesWorkspace } from "@/components/courses-workspace";
@@ -15,11 +16,11 @@ export default async function CoursesPage({
 }) {
   const user = await requireUser();
   const { error } = await searchParams;
-  const canCreate = user.role === "INSTRUCTOR" || user.role === "ADMIN";
+  const canCreate = user.role === "INSTRUCTOR" || isAdministrator(user.role);
 
   const courses = await prisma.course.findMany({
     where:
-      user.role === "ADMIN"
+      isAdministrator(user.role)
         ? {}
         : {
             OR: [
@@ -27,7 +28,7 @@ export default async function CoursesPage({
               { enrollments: { some: { userId: user.id } } },
             ],
           },
-    include: { instructor: true },
+    include: { instructor: true, section: { include: { year: true } } },
     orderBy: { updatedAt: "desc" },
   });
 
@@ -44,7 +45,7 @@ export default async function CoursesPage({
           id: course.id,
           code: course.code,
           title: course.title,
-          term: course.term,
+          term: course.section?.year.name ?? course.term,
           instructorName: course.instructor.name,
         }))}
       />

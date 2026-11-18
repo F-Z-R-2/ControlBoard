@@ -105,6 +105,17 @@ async function main() {
     },
   });
 
+  for (const account of [
+    { email: "superadmin@controlboard.dev", name: "Superadministración", role: Role.SUPER_ADMIN, password: "SuperAdmin123!" },
+    { email: "secretaria@controlboard.dev", name: "Secretaría", role: Role.SECRETARY, password: "Secretaria123!" },
+  ]) {
+    await prisma.user.upsert({
+      where: { email: account.email },
+      update: {},
+      create: { email: account.email, name: account.name, role: account.role, passwordHash: await bcrypt.hash(account.password, 10) },
+    });
+  }
+
   const instructor = await prisma.user.upsert({
     where: { email: "instructor@controlboard.dev" },
     update: {

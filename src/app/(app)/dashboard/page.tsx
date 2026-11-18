@@ -1,3 +1,4 @@
+import { isAdmin as isAdministrator } from "@/lib/roles";
 import {
   ArrowRight,
   BookOpen,
@@ -9,6 +10,7 @@ import {
 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { CourseCard } from "@/components/course-card";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -24,7 +26,8 @@ export const metadata: Metadata = {
 
 export default async function DashboardPage() {
   const user = await requireUser();
-  const isAdmin = user.role === "ADMIN";
+  if (user.role === "PSYCHOLOGIST") redirect("/psychology");
+  const isAdmin = isAdministrator(user.role);
   const isStudent = user.role === "STUDENT";
 
   const courseWhere = isAdmin

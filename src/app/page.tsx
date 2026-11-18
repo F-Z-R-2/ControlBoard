@@ -249,7 +249,7 @@ export default function Home() {
                 Prueba el campus con datos de demostración.
               </h2>
               <p className="mt-2 text-slate-300">
-                Tres roles, un curso y una sesión en vivo listos para explorar.
+                Cursos, aulas virtuales y roles para cada área del colegio.
               </p>
             </div>
             <Link
