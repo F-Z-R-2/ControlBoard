@@ -70,6 +70,7 @@ Abre `http://localhost:3000`.
 | --- | --- | --- |
 | Superadministrador | `superadmin@controlboard.dev` | `SuperAdmin123!` |
 | Secretaría | `secretaria@controlboard.dev` | `Secretaria123!` |
+| Psicología | `psicologia@controlboard.dev` | `Psicologia123!` |
 | Administrador | `admin@controlboard.dev` | `Admin123!` |
 | Docente | `instructor@controlboard.dev` | `Profe123!` |
 | Estudiante | `estudiante@controlboard.dev` | `Estudiante123!` |

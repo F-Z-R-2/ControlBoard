@@ -4,10 +4,10 @@ generator client {
 
 datasource db {
   provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  url       = env("postgresql://neondb_owner:npg_vspLoJ81ueaX@ep-hidden-boat-bdongz4a-pooler.c-8.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require")
+  directUrl = env("postgresql://neondb_owner:npg_vspLoJ81ueaX@ep-hidden-boat-bdongz4a.c-8.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require")
 }
-
+s
 enum Role {
   PSYCHOLOGIST
   SUPER_ADMIN
