@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { attendanceSchema, canRecordAttendance, schoolDate, validAttendanceDate } from "../src/lib/attendance";
+import { attendancePercentage, attendanceSchema, canRecordAttendance, schoolDate, validAttendanceDate } from "../src/lib/attendance";
 
 test("la fecha escolar usa Lima incluso después de la medianoche UTC", () => {
   assert.equal(schoolDate(new Date("2026-11-18T02:00:00Z")), "2026-11-17");
@@ -21,6 +21,11 @@ test("solo personal autorizado y el docente asignado pueden registrar", () => {
   assert.equal(canRecordAttendance({ id: "teacher", role: "INSTRUCTOR" }, "teacher"), true);
   assert.equal(canRecordAttendance({ id: "other", role: "INSTRUCTOR" }, "teacher"), false);
   assert.equal(canRecordAttendance({ id: "teacher", role: "STUDENT" }, "teacher"), false);
+});
+
+test("calcula el porcentaje ponderando tardanzas y excluyendo justificadas", () => {
+  assert.equal(attendancePercentage({ PRESENT: 1, LATE: 1, ABSENT: 1, EXCUSED: 8 }), 50);
+  assert.equal(attendancePercentage({ PRESENT: 0, LATE: 0, ABSENT: 0, EXCUSED: 2 }), null);
 });
 
 test("no permite fechas futuras, estados desconocidos o versiones inválidas", () => {

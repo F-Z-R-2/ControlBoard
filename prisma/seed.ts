@@ -96,23 +96,25 @@ async function main() {
 
   await prisma.user.upsert({
     where: { email: "admin@controlboard.dev" },
-    update: { passwordHash: passwords.admin, role: Role.ADMIN },
+    update: { name: "Administración", passwordHash: passwords.admin, role: Role.ADMIN, isActive: true },
     create: {
       name: "Administración",
       email: "admin@controlboard.dev",
       passwordHash: passwords.admin,
       role: Role.ADMIN,
+      isActive: true,
     },
   });
 
   for (const account of [
     { email: "superadmin@controlboard.dev", name: "Superadministración", role: Role.SUPER_ADMIN, password: "SuperAdmin123!" },
     { email: "secretaria@controlboard.dev", name: "Secretaría", role: Role.SECRETARY, password: "Secretaria123!" },
+    { email: "psicologia@controlboard.dev", name: "Psicología", role: Role.PSYCHOLOGIST, password: "Psicologia123!" },
   ]) {
     await prisma.user.upsert({
       where: { email: account.email },
-      update: {},
-      create: { email: account.email, name: account.name, role: account.role, passwordHash: await bcrypt.hash(account.password, 10) },
+      update: { name: account.name, role: account.role, passwordHash: await bcrypt.hash(account.password, 10), isActive: true },
+      create: { email: account.email, name: account.name, role: account.role, passwordHash: await bcrypt.hash(account.password, 10), isActive: true },
     });
   }
 
@@ -122,12 +124,14 @@ async function main() {
       passwordHash: passwords.instructor,
       role: Role.INSTRUCTOR,
       name: "Laura Méndez",
+      isActive: true,
     },
     create: {
       name: "Laura Méndez",
       email: "instructor@controlboard.dev",
       passwordHash: passwords.instructor,
       role: Role.INSTRUCTOR,
+      isActive: true,
     },
   });
 
@@ -149,12 +153,14 @@ async function main() {
           passwordHash: passwords.student,
           role: Role.STUDENT,
           name: seed.name,
+          isActive: true,
         },
         create: {
           name: seed.name,
           email: seed.email,
           passwordHash: passwords.student,
           role: Role.STUDENT,
+          isActive: true,
         },
       }),
     );
@@ -592,6 +598,9 @@ async function main() {
   console.log("Profesor: instructor@controlboard.dev / Profe123!");
   console.log("Estudiante: estudiante@controlboard.dev / Estudiante123!");
   console.log("Estudiante 2: ana@controlboard.dev / Estudiante123!");
+  console.log("Secretaría: secretaria@controlboard.dev / Secretaria123!");
+  console.log("Psicología: psicologia@controlboard.dev / Psicologia123!");
+  console.log("Superadministrador: superadmin@controlboard.dev / SuperAdmin123!");
   console.log(`Cursos listos: ${courses.length}`);
   console.log(
     `Tareas listas: ${demoCourses.reduce((total, course) => total + course.assignments.length, 0)}`,

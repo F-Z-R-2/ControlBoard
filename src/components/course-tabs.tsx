@@ -33,9 +33,7 @@ export function CourseTabs({ courseId }: { courseId: string }) {
     <div className="overflow-x-auto border-b border-[#dedede] bg-white">
       <nav className="flex min-w-max gap-1 px-2 sm:px-6">
         {tabs.map((tab) => {
-          const href = tab.segment === "attendance"
-            ? `/attendance?course=${encodeURIComponent(courseId)}`
-            : tab.segment ? `${base}/${tab.segment}` : base;
+          const href = tab.segment ? `${base}/${tab.segment}` : base;
           const active = tab.segment
             ? pathname === href || pathname.startsWith(`${href}/`)
             : pathname === base;

@@ -9,15 +9,24 @@ import { prisma } from "@/lib/prisma";
 
 class AttendanceError extends Error {}
 
+function attendanceRedirectPath(courseId: string, day: string, formData: FormData) {
+  const raw = formData.get("returnTo");
+  const base = typeof raw === "string" && /^\/(?!\/)/.test(raw) ? raw : "/attendance";
+  const sep = base.includes("?") ? "&" : "?";
+  return `${base}${sep}course=${encodeURIComponent(courseId)}&date=${day}`;
+}
+
 export async function saveAttendanceAction(formData: FormData) {
   const current = await requireUser();
   const parsed = attendanceSchema.safeParse(Object.fromEntries(formData));
+  const fallback = typeof formData.get("returnTo") === "string" && /^\/(?!\/)/.test(String(formData.get("returnTo")))
+    ? String(formData.get("returnTo")) : "/attendance";
   if (!parsed.success) {
-    redirect(`/attendance?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Datos inválidos")}`);
+    redirect(`${fallback}${fallback.includes("?") ? "&" : "?"}error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Datos inválidos")}`);
   }
   const { courseId, studentId, date: day, status, note, version } = parsed.data;
   const date = new Date(`${day}T00:00:00.000Z`);
-  const path = `/attendance?course=${encodeURIComponent(courseId)}&date=${day}`;
+  const path = attendanceRedirectPath(courseId, day, formData);
   let errorMessage: string | undefined;
   try {
     await prisma.$transaction(async tx => {
@@ -52,5 +61,6 @@ export async function saveAttendanceAction(formData: FormData) {
     } else throw error;
   }
   revalidatePath("/attendance");
+  revalidatePath(`/courses/${courseId}/attendance`);
   redirect(`${path}&${errorMessage ? `error=${encodeURIComponent(errorMessage)}` : "success=Asistencia+guardada"}`);
 }

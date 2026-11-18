@@ -8,6 +8,11 @@ export const attendanceLabels = {
   EXCUSED: "Justificada",
 } as const;
 
+export function attendancePercentage(counts: Record<keyof typeof attendanceLabels, number>) {
+  const eligible = counts.PRESENT + counts.LATE + counts.ABSENT;
+  return eligible === 0 ? null : Math.round(((counts.PRESENT + counts.LATE * 0.5) / eligible) * 100);
+}
+
 export function schoolDate(now = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Lima", year: "numeric", month: "2-digit", day: "2-digit",
