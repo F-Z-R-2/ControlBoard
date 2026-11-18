@@ -1,6 +1,7 @@
 # ControlBoard
 
 Campus virtual todo en uno. Reúne cursos, contenido, anuncios, tareas, libro de notas y aulas virtuales con video, chat, pantalla compartida, pizarra colaborativa y grabaciones.
+ss
 
 ## Stack
 
