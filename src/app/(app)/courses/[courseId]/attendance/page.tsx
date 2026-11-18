@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { AttendanceMatrix } from "@/components/attendance-matrix";
+import { StudentAttendanceHistory } from "@/components/student-attendance-history";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { attendanceGradePoints, attendanceLabels, attendancePercentage, canRecordAttendance, schoolDate, validAttendanceDate } from "@/lib/attendance";
+import { attendanceLabels, attendancePercentage, canRecordAttendance, schoolDate, validAttendanceDate } from "@/lib/attendance";
 import { getCourseAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
@@ -142,60 +143,16 @@ export default async function CourseAttendancePage({
               {studentScore === null ? "—" : `${studentScore} / 100`}
             </p>
           </div>
-          <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 border-b border-[#dedede] px-4 py-3 text-xs text-slate-600">
-            {(["PRESENT", "LATE", "ABSENT", "EXCUSED"] as const).map((status, index) => (
-              <span key={status}>
-                {index > 0 && <span className="mr-3 text-slate-300">|</span>}
-                {studentCounts[status]} {attendanceLabels[status]}
-              </span>
-            ))}
-          </div>
-
-          {history.length ? (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[520px] text-left text-sm">
-                <thead className="bg-[#fafafa] text-xs text-slate-600">
-                  <tr>
-                    <th scope="col" className="px-4 py-3 font-medium">Fecha</th>
-                    <th scope="col" className="px-4 py-3 font-medium">Estado</th>
-                    <th scope="col" className="px-4 py-3 text-right font-medium">Calificación</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {history.map((record) => {
-                    const grade = attendanceGradePoints[record.status];
-                    return (
-                      <tr key={record.id} className="border-t border-[#e5e5e5]">
-                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">
-                          {new Intl.DateTimeFormat("es-PE", {
-                            timeZone: "UTC",
-                            dateStyle: "short",
-                          }).format(record.date)}
-                        </td>
-                        <td className="px-4 py-3">
-                          <p className="font-medium text-slate-900">{attendanceLabels[record.status]}</p>
-                          <p className="mt-0.5 text-xs text-slate-500">Registrado por {record.recordedBy.name}</p>
-                          {record.note && <p className="mt-1 whitespace-pre-wrap text-xs text-slate-600">{record.note}</p>}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <span className={`inline-flex min-w-14 justify-center rounded-full px-3 py-1 text-xs font-semibold ${
-                            grade === 100 ? "bg-emerald-500 text-white"
-                              : grade === 75 ? "bg-amber-400 text-amber-950"
-                                : grade === 0 ? "bg-rose-500 text-white"
-                                  : "bg-slate-100 text-slate-600"
-                          }`}>
-                            {grade === null ? "—" : `${grade}%`}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="p-5 text-sm text-slate-500">Todavía no hay registros de asistencia para este curso.</p>
-          )}
+          <StudentAttendanceHistory
+            records={history.map((record) => ({
+              id: record.id,
+              date: record.date.toISOString().slice(0, 10),
+              status: record.status,
+              note: record.note,
+              recordedBy: record.recordedBy.name,
+            }))}
+            counts={studentCounts}
+          />
         </section>
       )}
     </div>
