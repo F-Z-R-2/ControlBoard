@@ -27,6 +27,16 @@ const demoAccounts = [
     email: "admin@controlboard.dev",
     password: "Admin123!",
   },
+  {
+    label: "Superadministrador",
+    email: "superadmin@controlboard.dev",
+    password: "SuperAdmin123!",
+  },
+  {
+    label: "Secretaría",
+    email: "secretaria@controlboard.dev",
+    password: "Secretaria123!",
+  },
 ];
 
 export default async function LoginPage({
