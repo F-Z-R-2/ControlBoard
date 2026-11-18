@@ -16,11 +16,12 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "ControlBoard — Campus virtual todo en uno",
-    template: "%s | ControlBoard",
+    default: "Manuel Scorza — Campus virtual",
+    template: "%s | Manuel Scorza",
   },
   description:
-    "Cursos, tareas, calificaciones y aulas virtuales en vivo con video, chat y pizarra colaborativa.",
+    "Campus virtual de la I. E. 40122 Manuel Scorza, Cerro Juli. Aprendizaje, acompañamiento y bienestar para nuestra comunidad educativa.",
+  applicationName: "Manuel Scorza",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
