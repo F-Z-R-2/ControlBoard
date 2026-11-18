@@ -36,7 +36,6 @@ type ShellUser = {
 const navigation = [
   { label: "Página de la institución", icon: Building, href: "/dashboard" },
   { label: "Cursos", icon: BookOpen, href: "/courses" },
-  { label: "Asistencia", icon: ClipboardList, href: "/attendance" },
   { label: "Calendario", icon: CalendarDays, href: "/calendar" },
   { label: "Anuncios", icon: MessageSquare, href: "/announcements" },
   { label: "Calificaciones", icon: ClipboardList, href: "/grades" },

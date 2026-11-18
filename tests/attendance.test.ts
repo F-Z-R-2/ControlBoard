@@ -24,7 +24,8 @@ test("solo personal autorizado y el docente asignado pueden registrar", () => {
 });
 
 test("calcula el porcentaje ponderando tardanzas y excluyendo justificadas", () => {
-  assert.equal(attendancePercentage({ PRESENT: 1, LATE: 1, ABSENT: 1, EXCUSED: 8 }), 50);
+  assert.equal(attendancePercentage({ PRESENT: 8, LATE: 2, ABSENT: 0, EXCUSED: 0 }), 95);
+  assert.equal(attendancePercentage({ PRESENT: 1, LATE: 1, ABSENT: 1, EXCUSED: 8 }), 58);
   assert.equal(attendancePercentage({ PRESENT: 0, LATE: 0, ABSENT: 0, EXCUSED: 2 }), null);
 });
 
