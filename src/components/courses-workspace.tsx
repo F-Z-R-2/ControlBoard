@@ -127,6 +127,7 @@ function CourseFilters({
           >
             <option value="all">Todos los cursos</option>
             <option value="open">Cursos abiertos</option>
+            <option value="favorites">Favoritos</option>
           </select>
         </label>
       </div>
@@ -352,10 +353,11 @@ export function CoursesWorkspace({
         course.title.toLocaleLowerCase().includes(normalizedQuery) ||
         course.code.toLocaleLowerCase().includes(normalizedQuery);
       const matchesTerm = term === "all" || course.term === term;
-      const matchesStatus = status !== "closed";
+      const matchesStatus =
+        status === "favorites" ? favorites.includes(course.id) : status !== "closed";
       return matchesQuery && matchesTerm && matchesStatus;
     });
-  }, [courses, query, status, term]);
+  }, [courses, query, status, term, favorites]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const visibleCourses = filtered.slice(page * pageSize, (page + 1) * pageSize);
 
