@@ -14,6 +14,7 @@ const courseSchema = z.object({
   title: z.string().trim().min(3, "El título es obligatorio").max(120),
   term: z.string().trim().min(2, "El periodo es obligatorio").max(40),
   description: z.string().trim().max(1000).optional(),
+  instructorId: z.string().trim().min(1).optional(),
 });
 
 function fail(message: string): never {
@@ -31,6 +32,7 @@ export async function createCourseAction(formData: FormData) {
     title: formData.get("title"),
     term: formData.get("term"),
     description: formData.get("description") || undefined,
+    instructorId: formData.get("instructorId") || undefined,
   });
 
   if (!parsed.success) {
@@ -38,6 +40,22 @@ export async function createCourseAction(formData: FormData) {
   }
 
   const code = parsed.data.code.toUpperCase();
+  let instructorId = user.id;
+  if (isAdministrator(user.role)) {
+    if (!parsed.data.instructorId) {
+      fail("Selecciona un docente para el curso");
+    }
+    const teachers = await db.sql<{ id: string }>`
+      SELECT "id" FROM "User"
+      WHERE "id" = ${parsed.data.instructorId} AND "role" = 'INSTRUCTOR' AND "isActive" = true
+      LIMIT 1
+    `;
+    if (!teachers.length) {
+      fail("El docente seleccionado no es válido");
+    }
+    instructorId = teachers[0]!.id;
+  }
+
   const existing = await db.sql<{ id: string }>`
     SELECT "id" FROM "Course" WHERE "code" = ${code} LIMIT 1
   `;
@@ -49,7 +67,7 @@ export async function createCourseAction(formData: FormData) {
   try {
     const created = await db.sql<{ id: string }>`
       INSERT INTO "Course" ("id", "code", "title", "term", "description", "instructorId", "updatedAt")
-      VALUES (${newId()}, ${code}, ${parsed.data.title}, ${parsed.data.term}, ${parsed.data.description ?? ""}, ${user.id}, NOW())
+      VALUES (${newId()}, ${code}, ${parsed.data.title}, ${parsed.data.term}, ${parsed.data.description ?? ""}, ${instructorId}, NOW())
       RETURNING "id"
     `;
     courseId = created[0]!.id;

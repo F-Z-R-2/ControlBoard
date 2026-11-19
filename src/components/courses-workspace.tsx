@@ -25,8 +25,15 @@ type Course = {
   instructorName: string;
 };
 
+type InstructorOption = {
+  id: string;
+  name: string;
+};
+
 type CourseWorkspaceProps = {
   canCreate: boolean;
+  requireInstructor: boolean;
+  instructors: InstructorOption[];
   courses: Course[];
 };
 
@@ -216,9 +223,13 @@ function WorkspaceCourseCard({
 
 function CourseFormDialog({
   canCreate,
+  requireInstructor,
+  instructors,
   onClose,
 }: {
   canCreate: boolean;
+  requireInstructor: boolean;
+  instructors: InstructorOption[];
   onClose: () => void;
 }) {
   return (
@@ -293,6 +304,32 @@ function CourseFormDialog({
                 className="mt-1.5 w-full resize-y border border-slate-300 px-3 py-2 text-sm focus:border-[#0b3ddb] focus:outline-none"
               />
             </label>
+            {requireInstructor ? (
+              instructors.length ? (
+                <label className="block text-xs font-medium text-slate-700">
+                  Docente
+                  <select
+                    name="instructorId"
+                    required
+                    defaultValue=""
+                    className="mt-1.5 h-10 w-full border border-slate-300 bg-white px-3 text-sm focus:border-[#0b3ddb] focus:outline-none"
+                  >
+                    <option value="" disabled>
+                      Selecciona un docente
+                    </option>
+                    {instructors.map((instructor) => (
+                      <option key={instructor.id} value={instructor.id}>
+                        {instructor.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <p className="text-xs text-amber-700">
+                  No hay docentes activos. Crea o activa una cuenta de docente para poder asignarla al curso.
+                </p>
+              )
+            ) : null}
             <button
               type="submit"
               className="mt-2 h-10 w-full bg-[#0b3ddb] text-sm font-medium text-white hover:bg-[#0932b5]"
@@ -330,6 +367,8 @@ function CourseFormDialog({
 
 export function CoursesWorkspace({
   canCreate,
+  requireInstructor,
+  instructors,
   courses,
 }: CourseWorkspaceProps) {
   const [query, setQuery] = useState("");
@@ -510,6 +549,8 @@ export function CoursesWorkspace({
       {formOpen ? (
         <CourseFormDialog
           canCreate={canCreate}
+          requireInstructor={requireInstructor}
+          instructors={instructors}
           onClose={() => setFormOpen(false)}
         />
       ) : null}
