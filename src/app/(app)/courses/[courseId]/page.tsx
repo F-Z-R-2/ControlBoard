@@ -16,9 +16,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import type { Announcement, Assignment, ContentItem, User } from "@/lib/db-types";
 import { getCourseAccess } from "@/lib/permissions";
 import { formatDateTime, formatRelative } from "@/lib/utils";
+
+type AnnouncementWithAuthor = Announcement & { author: User };
 
 export default async function CourseOverviewPage({
   params,
@@ -28,25 +31,32 @@ export default async function CourseOverviewPage({
   const { courseId } = await params;
   const { course, canManage } = await getCourseAccess(courseId);
 
-  const [announcements, assignments, content, studentCount] = await Promise.all([
-    prisma.announcement.findMany({
-      where: { courseId: course.id },
-      include: { author: true },
-      orderBy: { createdAt: "desc" },
-      take: 3,
-    }),
-    prisma.assignment.findMany({
-      where: { courseId: course.id },
-      orderBy: { dueAt: "asc" },
-      take: 4,
-    }),
-    prisma.contentItem.findMany({
-      where: { courseId: course.id },
-      orderBy: { position: "asc" },
-      take: 4,
-    }),
-    prisma.enrollment.count({ where: { courseId: course.id } }),
+  const [announcements, assignments, content, enrollmentCount] = await Promise.all([
+    db.sql<AnnouncementWithAuthor>`
+      SELECT a.*, to_jsonb(u) AS author
+      FROM "Announcement" a
+      JOIN "User" u ON u."id" = a."authorId"
+      WHERE a."courseId" = ${course.id}
+      ORDER BY a."createdAt" DESC
+      LIMIT 3
+    `,
+    db.sql<Assignment>`
+      SELECT * FROM "Assignment"
+      WHERE "courseId" = ${course.id}
+      ORDER BY "dueAt" ASC
+      LIMIT 4
+    `,
+    db.sql<ContentItem>`
+      SELECT * FROM "ContentItem"
+      WHERE "courseId" = ${course.id}
+      ORDER BY "position" ASC
+      LIMIT 4
+    `,
+    db.sql<{ count: number }>`
+      SELECT COUNT(*)::int AS count FROM "Enrollment" WHERE "courseId" = ${course.id}
+    `,
   ]);
+  const studentCount = enrollmentCount[0]?.count ?? 0;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">

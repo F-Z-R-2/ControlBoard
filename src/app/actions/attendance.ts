@@ -1,11 +1,16 @@
 "use server";
 
-import { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { attendanceSchema, canRecordAttendance } from "@/lib/attendance";
+import {
+  isSerializationFailure,
+  isUniqueViolation,
+  newId,
+  withTransaction,
+} from "@/lib/db";
+import type { Attendance, Course, User } from "@/lib/db-types";
 import { requireUser } from "@/lib/permissions";
-import { prisma } from "@/lib/prisma";
 
 class AttendanceError extends Error {}
 
@@ -29,34 +34,41 @@ export async function saveAttendanceAction(formData: FormData) {
   const path = attendanceRedirectPath(courseId, day, formData);
   let errorMessage: string | undefined;
   try {
-    await prisma.$transaction(async tx => {
-      const actor = await tx.user.findUnique({ where: { id: current.id } });
-      const course = await tx.course.findUnique({ where: { id: courseId } });
+    await withTransaction(async tx => {
+      const actors = await tx.sql<User>`SELECT * FROM "User" WHERE "id" = ${current.id} LIMIT 1`;
+      const actor = actors[0];
+      const courses = await tx.sql<Course>`SELECT * FROM "Course" WHERE "id" = ${courseId} LIMIT 1`;
+      const course = courses[0];
       if (!actor?.isActive || !course || !canRecordAttendance(actor, course.instructorId)) {
         throw new AttendanceError("No tienes permiso para registrar asistencia en este curso");
       }
-      const existing = await tx.attendance.findUnique({
-        where: { courseId_studentId_date: { courseId, studentId, date } },
-      });
+      const existingRows = await tx.sql<Attendance>`SELECT * FROM "Attendance" WHERE "courseId" = ${courseId} AND "studentId" = ${studentId} AND "date" = ${date} LIMIT 1`;
+      const existing = existingRows[0];
       if ((existing?.version ?? 0) !== version) {
         throw new AttendanceError("El registro cambió. Revisa los datos actualizados antes de guardar");
       }
       if (!existing) {
-        const enrollment = await tx.enrollment.findFirst({
-          where: { courseId, userId: studentId, role: "STUDENT", user: { role: "STUDENT", isActive: true } },
-        });
-        if (!enrollment) throw new AttendanceError("El estudiante no tiene matrícula activa en este curso");
-        await tx.attendance.create({ data: { courseId, studentId, date, status, note, recordedById: actor.id } });
+        const enrollments = await tx.sql<{ id: string }>`
+          SELECT e."id" FROM "Enrollment" e JOIN "User" u ON u."id" = e."userId"
+          WHERE e."courseId" = ${courseId} AND e."userId" = ${studentId} AND e."role" = 'STUDENT'
+            AND u."role" = 'STUDENT' AND u."isActive" = TRUE LIMIT 1
+        `;
+        if (!enrollments.length) throw new AttendanceError("El estudiante no tiene matrícula activa en este curso");
+        await tx.sql`
+          INSERT INTO "Attendance" ("id", "courseId", "studentId", "date", "status", "note", "recordedById", "updatedAt")
+          VALUES (${newId()}, ${courseId}, ${studentId}, ${date}, ${status}, ${note}, ${actor.id}, NOW())
+        `;
       } else {
-        await tx.attendance.update({
-          where: { id: existing.id },
-          data: { status, note, recordedById: actor.id, version: { increment: 1 } },
-        });
+        await tx.sql`
+          UPDATE "Attendance"
+          SET "status" = ${status}, "note" = ${note}, "recordedById" = ${actor.id}, "version" = "version" + 1, "updatedAt" = NOW()
+          WHERE "id" = ${existing.id}
+        `;
       }
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }, { isolationLevel: "serializable" });
   } catch (error) {
     if (error instanceof AttendanceError) errorMessage = error.message;
-    else if (error instanceof Prisma.PrismaClientKnownRequestError && ["P2002", "P2034"].includes(error.code)) {
+    else if (isUniqueViolation(error) || isSerializationFailure(error)) {
       errorMessage = "Otro usuario actualizó la asistencia. Revisa los datos y vuelve a guardar";
     } else throw error;
   }

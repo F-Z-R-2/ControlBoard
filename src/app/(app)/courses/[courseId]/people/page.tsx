@@ -7,9 +7,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import type { Enrollment, User } from "@/lib/db-types";
 import { getCourseAccess } from "@/lib/permissions";
 import { formatDate, initials, roleLabel } from "@/lib/utils";
+
+type EnrollmentWithUser = Enrollment & { user: User };
 
 export default async function PeoplePage({
   params,
@@ -19,11 +22,13 @@ export default async function PeoplePage({
   const { courseId } = await params;
   const { course } = await getCourseAccess(courseId);
 
-  const enrollments = await prisma.enrollment.findMany({
-    where: { courseId: course.id },
-    include: { user: true },
-    orderBy: { createdAt: "asc" },
-  });
+  const enrollments = await db.sql<EnrollmentWithUser>`
+    SELECT e.*, to_jsonb(u) AS "user"
+    FROM "Enrollment" e
+    JOIN "User" u ON u."id" = e."userId"
+    WHERE e."courseId" = ${course.id}
+    ORDER BY e."createdAt" ASC
+  `;
 
   return (
     <div className="space-y-6">

@@ -4,8 +4,8 @@ import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { db } from "@/lib/db";
 import { getAccessibleCourses } from "@/lib/courses";
-import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/permissions";
 
 export const metadata: Metadata = { title: "Calificaciones" };
@@ -15,18 +15,32 @@ export default async function GradesOverviewPage() {
   const isStudent = user.role === "STUDENT";
   const courses = await getAccessibleCourses(user);
 
-  const assignments = await prisma.assignment.findMany({
-    where: { courseId: { in: courses.map((course) => course.id) } },
-    select: {
-      id: true,
-      courseId: true,
-      points: true,
-      submissions: {
-        where: isStudent ? { studentId: user.id } : { grade: null },
-        select: { grade: true },
-      },
-    },
-  });
+  const courseIds = courses.map((course) => course.id);
+  const placeholders = courseIds.map((_, index) => `$${index + 1}`).join(", ");
+  const params: unknown[] = [...courseIds];
+  let submissionFilter = `s."grade" IS NULL`;
+  if (isStudent) {
+    params.push(user.id);
+    submissionFilter = `s."studentId" = $${params.length}`;
+  }
+  const assignments: {
+    id: string;
+    courseId: string;
+    points: number;
+    submissions: { grade: number | null }[];
+  }[] = courseIds.length
+    ? await db.query(
+        `SELECT a."id", a."courseId", a."points",
+           COALESCE((
+             SELECT jsonb_agg(jsonb_build_object('grade', s."grade") ORDER BY s."id")
+             FROM "Submission" s
+             WHERE s."assignmentId" = a."id" AND ${submissionFilter}
+           ), '[]'::jsonb) AS "submissions"
+         FROM "Assignment" a
+         WHERE a."courseId" IN (${placeholders})`,
+        params,
+      )
+    : [];
 
   const assignmentsByCourse = new Map<
     string,

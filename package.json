@@ -4,14 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:push": "prisma db push",
-    "db:seed": "prisma db seed",
+    "db:schema": "node --env-file-if-exists=.env --import tsx scripts/apply-schema.ts",
+    "db:seed": "node --env-file-if-exists=.env --import tsx db/seed.ts",
     "test:roles": "node --import tsx --test tests/roles.test.ts",
     "admin:bootstrap": "node --env-file-if-exists=.env --import tsx scripts/bootstrap-admin.ts",
     "test:attendance": "node --import tsx --test tests/attendance.test.ts",
@@ -19,15 +17,11 @@
     "test:grading": "node --import tsx --test tests/grading.test.ts",
     "test:psychology": "node --import tsx --test tests/psychology.test.ts"
   },
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
-  },
   "dependencies": {
-    "@auth/prisma-adapter": "^2.11.3",
     "@excalidraw/excalidraw": "^0.18.1",
     "@livekit/components-react": "^2.9.25",
     "@livekit/components-styles": "^1.2.0",
-    "@prisma/client": "^6.19.3",
+    "@neondatabase/serverless": "^1.2.1",
     "@vercel/blob": "^2.9.0",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
@@ -41,6 +35,7 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "tailwind-merge": "^3.7.0",
+    "ws": "^8.23.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -48,17 +43,14 @@
     "@types/node": "^20.19.43",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/ws": "^8.18.2",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
-    "prisma": "^6.19.3",
     "tailwindcss": "4.3.3",
     "tsx": "^4.23.15",
     "typescript": "^5"
   },
   "allowScripts": {
-    "@prisma/client@6.19.3": true,
-    "@prisma/engines@6.19.3": true,
-    "prisma@6.19.3": true,
     "esbuild@0.28.2": true
   }
 }

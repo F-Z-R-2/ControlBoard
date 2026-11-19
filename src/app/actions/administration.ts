@@ -1,19 +1,24 @@
 "use server";
 
-import { Prisma, Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import {
+  isSerializationFailure,
+  isUniqueViolation,
+  newId,
+  withTransaction,
+} from "@/lib/db";
+import type { Course, User } from "@/lib/db-types";
 import { requireStaff } from "@/lib/permissions";
-import { prisma } from "@/lib/prisma";
 import { canManageUser, isStaff, manageableRoles } from "@/lib/roles";
 
 const userSchema = z.object({
   id: z.string().optional(),
   name: z.string().trim().min(2, "Escribe el nombre completo").max(120),
   email: z.string().trim().email("Correo inválido").toLowerCase(),
-  role: z.nativeEnum(Role),
+  role: z.enum(["PSYCHOLOGIST", "SUPER_ADMIN", "SECRETARY", "ADMIN", "INSTRUCTOR", "STUDENT"]),
   isActive: z.enum(["true", "false"]).transform((value) => value === "true"),
   password: z.string().refine((value) => !value || (value.length >= 8 && Buffer.byteLength(value, "utf8") <= 72), "La contraseña debe tener al menos 8 caracteres y como máximo 72 bytes"),
 });
@@ -23,10 +28,8 @@ function finish(message: string, error = false): never {
 }
 
 function mutationError(error: unknown): never {
-  if (error instanceof Prisma.PrismaClientKnownRequestError) {
-    if (error.code === "P2002") finish("Ese correo ya está registrado", true);
-    if (error.code === "P2034") finish("Otro usuario modificó los datos. Vuelve a intentarlo", true);
-  }
+  if (isUniqueViolation(error)) finish("Ese correo ya está registrado", true);
+  if (isSerializationFailure(error)) finish("Otro usuario modificó los datos. Vuelve a intentarlo", true);
   if (error instanceof ManagementError) finish(error.message, true);
   throw error;
 }
@@ -46,29 +49,44 @@ export async function saveUserAction(formData: FormData) {
   if (!id && !password) finish("La contraseña es obligatoria para cuentas nuevas", true);
   const passwordHash = password ? await bcrypt.hash(password, 10) : undefined;
   try {
-    await prisma.$transaction(async (tx) => {
-      const actor = await tx.user.findUnique({ where: { id: current.id } });
+    await withTransaction(async (tx) => {
+      const actors = await tx.sql<User>`SELECT * FROM "User" WHERE "id" = ${current.id} LIMIT 1`;
+      const actor = actors[0];
       if (!actor?.isActive || !manageableRoles(actor.role).includes(data.role)) {
         throw new ManagementError("No tienes permiso para asignar este rol");
       }
       if (id) {
-        const target = await tx.user.findUnique({ where: { id } });
+        const targets = await tx.sql<User>`SELECT * FROM "User" WHERE "id" = ${id} LIMIT 1`;
+        const target = targets[0];
         if (!target || !canManageUser(actor, target)) {
           throw new ManagementError("No puedes modificar esta cuenta ni tu propia cuenta desde este panel");
         }
         if (target.role === "SUPER_ADMIN" && target.isActive && (data.role !== "SUPER_ADMIN" || !data.isActive)) {
-          const remaining = await tx.user.count({ where: { role: "SUPER_ADMIN", isActive: true, id: { not: id } } });
-          if (!remaining) throw new ManagementError("Debe quedar al menos un superadministrador activo");
+          const remaining = await tx.sql<{ count: number }>`
+            SELECT COUNT(*)::int AS "count" FROM "User"
+            WHERE "role" = 'SUPER_ADMIN' AND "isActive" = TRUE AND "id" <> ${id}
+          `;
+          if (!remaining[0]!.count) throw new ManagementError("Debe quedar al menos un superadministrador activo");
         }
         if (data.role !== target.role && !["INSTRUCTOR", "ADMIN", "SUPER_ADMIN"].includes(data.role)) {
-          const courses = await tx.course.count({ where: { instructorId: id } });
-          if (courses) throw new ManagementError("La cuenta tiene cursos a cargo; reasígnalos antes de cambiar su rol");
+          const courses = await tx.sql<{ count: number }>`
+            SELECT COUNT(*)::int AS "count" FROM "Course" WHERE "instructorId" = ${id}
+          `;
+          if (courses[0]!.count) throw new ManagementError("La cuenta tiene cursos a cargo; reasígnalos antes de cambiar su rol");
         }
-        await tx.user.update({ where: { id }, data: { ...data, ...(passwordHash ? { passwordHash } : {}) } });
+        await tx.sql`
+          UPDATE "User"
+          SET "name" = ${data.name}, "email" = ${data.email}, "role" = ${data.role}, "isActive" = ${data.isActive},
+              "passwordHash" = COALESCE(${passwordHash ?? null}, "passwordHash"), "updatedAt" = NOW()
+          WHERE "id" = ${id}
+        `;
       } else {
-        await tx.user.create({ data: { ...data, passwordHash } });
+        await tx.sql`
+          INSERT INTO "User" ("id", "name", "email", "role", "isActive", "passwordHash", "updatedAt")
+          VALUES (${newId()}, ${data.name}, ${data.email}, ${data.role}, ${data.isActive}, ${passwordHash ?? null}, NOW())
+        `;
       }
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }, { isolationLevel: "serializable" });
   } catch (error) { mutationError(error); }
   revalidatePath("/", "layout");
   finish(id ? "Cuenta actualizada" : "Cuenta creada");
@@ -82,19 +100,26 @@ export async function manageEnrollmentAction(formData: FormData) {
   if (!parsed.success) finish("Selecciona estudiante, curso y operación", true);
   const { userId, courseId, operation } = parsed.data;
   try {
-    await prisma.$transaction(async (tx) => {
-      const actor = await tx.user.findUnique({ where: { id: current.id } });
+    await withTransaction(async (tx) => {
+      const actors = await tx.sql<User>`SELECT * FROM "User" WHERE "id" = ${current.id} LIMIT 1`;
+      const actor = actors[0];
       if (!actor?.isActive || !isStaff(actor.role)) throw new ManagementError("No tienes permiso para gestionar matrículas");
-      const student = await tx.user.findUnique({ where: { id: userId } });
-      const course = await tx.course.findUnique({ where: { id: courseId } });
+      const students = await tx.sql<User>`SELECT * FROM "User" WHERE "id" = ${userId} LIMIT 1`;
+      const student = students[0];
+      const courses = await tx.sql<Course>`SELECT * FROM "Course" WHERE "id" = ${courseId} LIMIT 1`;
+      const course = courses[0];
       if (!student || student.role !== "STUDENT" || !course) throw new ManagementError("Estudiante o curso inválido");
       if (operation === "enroll") {
         if (!student.isActive) throw new ManagementError("Activa al estudiante antes de matricularlo");
-        await tx.enrollment.upsert({ where: { courseId_userId: { courseId, userId } }, create: { courseId, userId }, update: {} });
+        await tx.sql`
+          INSERT INTO "Enrollment" ("id", "courseId", "userId")
+          VALUES (${newId()}, ${courseId}, ${userId})
+          ON CONFLICT ("courseId", "userId") DO NOTHING
+        `;
       } else {
-        await tx.enrollment.deleteMany({ where: { courseId, userId } });
+        await tx.sql`DELETE FROM "Enrollment" WHERE "courseId" = ${courseId} AND "userId" = ${userId}`;
       }
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }, { isolationLevel: "serializable" });
   } catch (error) { mutationError(error); }
   revalidatePath("/", "layout");
   finish(operation === "enroll" ? "Estudiante matriculado" : "Matrícula retirada; las entregas se conservan");

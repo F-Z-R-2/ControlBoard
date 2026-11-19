@@ -22,10 +22,10 @@ export default async function ToolsPage() {
   const integrations = [
     {
       name: "Base de datos",
-      description: "PostgreSQL local o Neon para usuarios, cursos y entregas.",
+      description: "Neon serverless para usuarios, cursos y entregas.",
       ready: Boolean(process.env.DATABASE_URL),
       icon: Database,
-      action: "npx prisma dev",
+      action: "Configura DATABASE_URL y npm run db:schema",
     },
     {
       name: "Aulas en vivo",

@@ -5,7 +5,7 @@ import { AuthError } from "next-auth";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { signIn, signOut } from "@/auth";
-import { prisma } from "@/lib/prisma";
+import { db, isUniqueViolation, newId } from "@/lib/db";
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -63,20 +63,23 @@ export async function registerAction(formData: FormData) {
   }
 
   const email = parsed.data.email.toLowerCase();
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) {
+  const existing = await db.sql<{ id: string }>`
+    SELECT "id" FROM "User" WHERE "email" = ${email} LIMIT 1
+  `;
+  if (existing.length) {
     fail("/register", "Ese correo ya está registrado");
   }
 
   const passwordHash = await bcrypt.hash(parsed.data.password, 10);
-  await prisma.user.create({
-    data: {
-      name: parsed.data.name,
-      email,
-      passwordHash,
-      role: parsed.data.role,
-    },
-  });
+  try {
+    await db.sql`
+      INSERT INTO "User" ("id", "name", "email", "passwordHash", "role", "updatedAt")
+      VALUES (${newId()}, ${parsed.data.name}, ${email}, ${passwordHash}, ${parsed.data.role}, NOW())
+    `;
+  } catch (error) {
+    if (isUniqueViolation(error)) fail("/register", "Ese correo ya está registrado");
+    throw error;
+  }
 
   await signIn("credentials", {
     email,

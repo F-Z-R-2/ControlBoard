@@ -2,7 +2,8 @@ import { isAdmin as isAdministrator } from "@/lib/roles";
 import type { Metadata } from "next";
 import { Alert } from "@/components/ui/alert";
 import { CoursesWorkspace } from "@/components/courses-workspace";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import type { AcademicYear, Course, User } from "@/lib/db-types";
 import { requireUser } from "@/lib/permissions";
 
 export const metadata: Metadata = {
@@ -18,19 +19,23 @@ export default async function CoursesPage({
   const { error } = await searchParams;
   const canCreate = user.role === "INSTRUCTOR" || isAdministrator(user.role);
 
-  const courses = await prisma.course.findMany({
-    where:
-      isAdministrator(user.role)
-        ? {}
-        : {
-            OR: [
-              { instructorId: user.id },
-              { enrollments: { some: { userId: user.id } } },
-            ],
-          },
-    include: { instructor: true, section: { include: { year: true } } },
-    orderBy: { updatedAt: "desc" },
-  });
+  const isAdmin = isAdministrator(user.role);
+  const courses = await db.query<
+    Course & { instructor: User; section: { year: AcademicYear } | null }
+  >(
+    `SELECT c.*, to_jsonb(u) AS "instructor",
+       CASE WHEN ss."id" IS NULL THEN NULL ELSE jsonb_build_object('year', to_jsonb(ay)) END AS "section"
+     FROM "Course" c
+     JOIN "User" u ON u."id" = c."instructorId"
+     LEFT JOIN "SchoolSection" ss ON ss."id" = c."sectionId"
+     LEFT JOIN "AcademicYear" ay ON ay."id" = ss."yearId"
+     ${isAdmin ? "" : `WHERE c."instructorId" = $1 OR EXISTS (
+       SELECT 1 FROM "Enrollment" e
+       WHERE e."courseId" = c."id" AND e."userId" = $2
+     )`}
+     ORDER BY c."updatedAt" DESC`,
+    isAdmin ? [] : [user.id, user.id],
+  );
 
   return (
     <>

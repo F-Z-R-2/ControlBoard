@@ -5,7 +5,8 @@ import { isAdmin as isAdministrator } from "@/lib/roles";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { db, isUniqueViolation, newId } from "@/lib/db";
+import type { Course } from "@/lib/db-types";
 import { requireUser } from "@/lib/permissions";
 
 const courseSchema = z.object({
@@ -37,23 +38,28 @@ export async function createCourseAction(formData: FormData) {
   }
 
   const code = parsed.data.code.toUpperCase();
-  const existing = await prisma.course.findUnique({ where: { code } });
-  if (existing) {
+  const existing = await db.sql<{ id: string }>`
+    SELECT "id" FROM "Course" WHERE "code" = ${code} LIMIT 1
+  `;
+  if (existing.length) {
     fail("Ya existe un curso con ese código");
   }
 
-  const course = await prisma.course.create({
-    data: {
-      code,
-      title: parsed.data.title,
-      term: parsed.data.term,
-      description: parsed.data.description ?? "",
-      instructorId: user.id,
-    },
-  });
+  let courseId: string;
+  try {
+    const created = await db.sql<{ id: string }>`
+      INSERT INTO "Course" ("id", "code", "title", "term", "description", "instructorId", "updatedAt")
+      VALUES (${newId()}, ${code}, ${parsed.data.title}, ${parsed.data.term}, ${parsed.data.description ?? ""}, ${user.id}, NOW())
+      RETURNING "id"
+    `;
+    courseId = created[0]!.id;
+  } catch (error) {
+    if (isUniqueViolation(error)) fail("Ya existe un curso con ese código");
+    throw error;
+  }
 
   revalidatePath("/courses");
-  redirect(`/courses/${course.id}`);
+  redirect(`/courses/${courseId}`);
 }
 
 export async function enrollAction(formData: FormData) {
@@ -66,7 +72,10 @@ export async function enrollAction(formData: FormData) {
     fail("Escribe el código del curso");
   }
 
-  const course = await prisma.course.findUnique({ where: { code } });
+  const courses = await db.sql<Course>`
+    SELECT * FROM "Course" WHERE "code" = ${code} LIMIT 1
+  `;
+  const course = courses[0];
   if (!course) {
     fail("No existe un curso con ese código");
   }
@@ -75,16 +84,11 @@ export async function enrollAction(formData: FormData) {
     redirect(`/courses/${course.id}`);
   }
 
-  await prisma.enrollment.upsert({
-    where: {
-      courseId_userId: { courseId: course.id, userId: user.id },
-    },
-    update: {},
-    create: {
-      courseId: course.id,
-      userId: user.id,
-    },
-  });
+  await db.sql`
+    INSERT INTO "Enrollment" ("id", "courseId", "userId")
+    VALUES (${newId()}, ${course.id}, ${user.id})
+    ON CONFLICT ("courseId", "userId") DO NOTHING
+  `;
 
   revalidatePath("/courses");
   redirect(`/courses/${course.id}`);

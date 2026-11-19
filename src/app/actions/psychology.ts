@@ -1,10 +1,15 @@
 "use server";
 
-import { Prisma } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import {
+  isSerializationFailure,
+  isUniqueViolation,
+  newId,
+  withTransaction,
+} from "@/lib/db";
+import type { PsychologyAppointment, PsychologyCase, User } from "@/lib/db-types";
 import { requireUser } from "@/lib/permissions";
-import { prisma } from "@/lib/prisma";
 import { appointmentTime, canAccessPsychology, canManagePsychologyCase, canWritePsychologyNotes, psychologyActionSchema } from "@/lib/psychology";
 
 class PsychologyError extends Error {}
@@ -18,54 +23,92 @@ export async function psychologyAction(formData: FormData) {
   let caseId = "caseId" in data ? data.caseId : "";
   let errorMessage: string | undefined;
   try {
-    await prisma.$transaction(async tx => {
-      const user = await tx.user.findUnique({ where: { id: current.id } });
+    await withTransaction(async tx => {
+      const users = await tx.sql<User>`SELECT * FROM "User" WHERE "id" = ${current.id} LIMIT 1`;
+      const user = users[0];
       if (!user?.isActive || !canAccessPsychology(user.role)) throw new PsychologyError("No tienes acceso al módulo");
       if (data.operation === "open") {
         if (user.role === "PSYCHOLOGIST" && data.psychologistId !== user.id) throw new PsychologyError("Solo puedes abrir fichas asignadas a ti");
-        const student = await tx.user.findUnique({ where: { id: data.studentId } });
-        const professional = await tx.user.findUnique({ where: { id: data.psychologistId } });
+        const students = await tx.sql<User>`SELECT * FROM "User" WHERE "id" = ${data.studentId} LIMIT 1`;
+        const student = students[0];
+        const professionals = await tx.sql<User>`SELECT * FROM "User" WHERE "id" = ${data.psychologistId} LIMIT 1`;
+        const professional = professionals[0];
         if (!student?.isActive || student.role !== "STUDENT" || !professional?.isActive || professional.role !== "PSYCHOLOGIST") throw new PsychologyError("Selecciona un estudiante y un profesional activos");
-        const existing = await tx.psychologyCase.findUnique({ where: { studentId: student.id }, select: { id: true } });
-        if (existing) throw new PsychologyError("El estudiante ya tiene una ficha. Solicita al profesional responsable que la revise o reabra");
-        const created = await tx.psychologyCase.create({ data: { studentId: student.id, psychologistId: professional.id, openedById: user.id, category: data.category } });
-        caseId = created.id;
+        const existing = await tx.sql<{ id: string }>`SELECT "id" FROM "PsychologyCase" WHERE "studentId" = ${student.id} LIMIT 1`;
+        if (existing.length) throw new PsychologyError("El estudiante ya tiene una ficha. Solicita al profesional responsable que la revise o reabra");
+        const created = await tx.sql<{ id: string }>`
+          INSERT INTO "PsychologyCase" ("id", "studentId", "psychologistId", "openedById", "category", "updatedAt")
+          VALUES (${newId()}, ${student.id}, ${professional.id}, ${user.id}, ${data.category}, NOW())
+          RETURNING "id"
+        `;
+        caseId = created[0]!.id;
         return;
       }
-      const record = await tx.psychologyCase.findUnique({ where: { id: data.caseId }, include: { psychologist: { select: { role: true, isActive: true } }, student: { select: { isActive: true } } } });
+      const records = await tx.sql<PsychologyCase & { psychologist: Pick<User, "role" | "isActive">; student: Pick<User, "isActive"> }>`
+        SELECT pc.*, to_jsonb(pu) AS "psychologist", to_jsonb(su) AS "student"
+        FROM "PsychologyCase" pc
+        JOIN "User" pu ON pu."id" = pc."psychologistId"
+        JOIN "User" su ON su."id" = pc."studentId"
+        WHERE pc."id" = ${data.caseId} LIMIT 1
+      `;
+      const record = records[0];
       if (!record || !canManagePsychologyCase(user, record.psychologistId)) throw new PsychologyError("Ficha no disponible");
       const clinical = canWritePsychologyNotes(user, record.psychologistId);
       if (data.operation === "note") {
         if (!clinical) throw new PsychologyError("Solo el profesional asignado puede registrar notas de atención");
-        await tx.psychologyNote.create({ data: { caseId: record.id, authorId: user.id, attendedOn: new Date(`${data.attendedOn}T00:00:00Z`), body: data.body } });
+        await tx.sql`
+          INSERT INTO "PsychologyNote" ("id", "caseId", "authorId", "attendedOn", "body")
+          VALUES (${newId()}, ${record.id}, ${user.id}, ${new Date(`${data.attendedOn}T00:00:00Z`)}, ${data.body})
+        `;
       } else if (data.operation === "case-status") {
         if (!clinical) throw new PsychologyError("Solo el profesional asignado puede cerrar o reabrir una ficha");
         if (record.version !== data.version) throw new PsychologyError("La ficha cambió. Revisa su estado actual");
-        await tx.psychologyCase.update({ where: { id: record.id }, data: { status: data.status, version: { increment: 1 } } });
-        if (data.status === "CLOSED") await tx.psychologyAppointment.updateMany({ where: { caseId: record.id, status: "SCHEDULED", startsAt: { gt: new Date() } }, data: { status: "CANCELLED", version: { increment: 1 } } });
+        await tx.sql`
+          UPDATE "PsychologyCase"
+          SET "status" = ${data.status}, "version" = "version" + 1, "updatedAt" = NOW()
+          WHERE "id" = ${record.id}
+        `;
+        if (data.status === "CLOSED") {
+          await tx.sql`
+            UPDATE "PsychologyAppointment"
+            SET "status" = 'CANCELLED', "version" = "version" + 1
+            WHERE "caseId" = ${record.id} AND "status" = 'SCHEDULED' AND "startsAt" > ${new Date()}
+          `;
+        }
       } else if (data.operation === "schedule") {
         if (record.status === "CLOSED") throw new PsychologyError("Reabre la ficha antes de programar una cita");
         if (!record.student.isActive || !record.psychologist.isActive || record.psychologist.role !== "PSYCHOLOGIST") throw new PsychologyError("El estudiante y el profesional deben estar activos");
         const startsAt = appointmentTime(data.startsAt)!;
         const endsAt = new Date(startsAt.getTime() + Number(data.minutes) * 60000);
         if (startsAt <= new Date()) throw new PsychologyError("La cita debe estar en el futuro");
-        const conflict = await tx.psychologyAppointment.findFirst({ where: {
-          status: "SCHEDULED", startsAt: { lt: endsAt }, endsAt: { gt: startsAt },
-          case: { OR: [{ psychologistId: record.psychologistId }, { studentId: record.studentId }] },
-        }, select: { id: true } });
-        if (conflict) throw new PsychologyError("El profesional o estudiante ya tiene una cita en ese horario");
-        await tx.psychologyAppointment.create({ data: { caseId: record.id, startsAt, endsAt } });
+        const conflicts = await tx.sql<{ id: string }>`
+          SELECT a."id" FROM "PsychologyAppointment" a
+          JOIN "PsychologyCase" c ON c."id" = a."caseId"
+          WHERE a."status" = 'SCHEDULED' AND a."startsAt" < ${endsAt} AND a."endsAt" > ${startsAt}
+            AND (c."psychologistId" = ${record.psychologistId} OR c."studentId" = ${record.studentId})
+          LIMIT 1
+        `;
+        if (conflicts.length) throw new PsychologyError("El profesional o estudiante ya tiene una cita en ese horario");
+        await tx.sql`
+          INSERT INTO "PsychologyAppointment" ("id", "caseId", "startsAt", "endsAt")
+          VALUES (${newId()}, ${record.id}, ${startsAt}, ${endsAt})
+        `;
       } else {
         if (data.status !== "CANCELLED" && !clinical) throw new PsychologyError("Solo el profesional asignado puede confirmar la atención o inasistencia");
-        const appointment = await tx.psychologyAppointment.findFirst({ where: { id: data.appointmentId, caseId: record.id } });
+        const appointments = await tx.sql<PsychologyAppointment>`SELECT * FROM "PsychologyAppointment" WHERE "id" = ${data.appointmentId} AND "caseId" = ${record.id} LIMIT 1`;
+        const appointment = appointments[0];
         if (!appointment || appointment.version !== data.version || appointment.status !== "SCHEDULED") throw new PsychologyError("La cita ya cambió de estado. Actualiza la página");
         if (data.status !== "CANCELLED" && appointment.startsAt > new Date()) throw new PsychologyError("Espera hasta la hora de la cita para registrar su resultado");
-        await tx.psychologyAppointment.update({ where: { id: appointment.id }, data: { status: data.status, version: { increment: 1 } } });
+        await tx.sql`
+          UPDATE "PsychologyAppointment"
+          SET "status" = ${data.status}, "version" = "version" + 1
+          WHERE "id" = ${appointment.id}
+        `;
       }
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }, { isolationLevel: "serializable" });
   } catch (error) {
     if (error instanceof PsychologyError) errorMessage = error.message;
-    else if (error instanceof Prisma.PrismaClientKnownRequestError && ["P2002", "P2034"].includes(error.code)) errorMessage = "Otra persona modificó estos datos. Actualiza y vuelve a intentarlo";
+    else if (isUniqueViolation(error) || isSerializationFailure(error)) errorMessage = "Otra persona modificó estos datos. Actualiza y vuelve a intentarlo";
     else throw error;
   }
   revalidatePath("/psychology", "layout");

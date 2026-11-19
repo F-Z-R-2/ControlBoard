@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import type { ActionState } from "@/lib/action-state";
-import { prisma } from "@/lib/prisma";
+import { db, newId } from "@/lib/db";
 import { requireCourseManager } from "@/lib/permissions";
 
 const contentSchema = z.object({
@@ -69,16 +69,10 @@ export async function createContentAction(
     return { error: "Escribe el contenido de la página" };
   }
 
-  await prisma.contentItem.create({
-    data: {
-      courseId,
-      authorId: user.id,
-      title: parsed.data.title,
-      type: parsed.data.type,
-      body,
-      url,
-    },
-  });
+  await db.sql`
+    INSERT INTO "ContentItem" ("id", "courseId", "authorId", "title", "type", "body", "url", "updatedAt")
+    VALUES (${newId()}, ${courseId}, ${user.id}, ${parsed.data.title}, ${parsed.data.type}, ${body}, ${url}, NOW())
+  `;
 
   revalidatePath(`/courses/${courseId}/content`);
   revalidatePath(`/courses/${courseId}`);
@@ -90,7 +84,7 @@ export async function deleteContentAction(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   await requireCourseManager(courseId);
 
-  await prisma.contentItem.deleteMany({ where: { id, courseId } });
+  await db.sql`DELETE FROM "ContentItem" WHERE "id" = ${id} AND "courseId" = ${courseId}`;
 
   revalidatePath(`/courses/${courseId}/content`);
   revalidatePath(`/courses/${courseId}`);

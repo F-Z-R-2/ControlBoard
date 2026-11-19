@@ -16,12 +16,28 @@ import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import type { Announcement, Assignment, Course, Submission, User } from "@/lib/db-types";
 import { requireUser } from "@/lib/permissions";
 import { formatRelative } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: "Actividad",
+};
+
+type DashboardCourse = Course & {
+  instructor: User;
+  _count: { enrollments: number; assignments: number };
+};
+
+type UpcomingAssignment = Assignment & {
+  course: Course;
+  submissions: Pick<Submission, "id" | "grade">[];
+};
+
+type DashboardAnnouncement = Announcement & {
+  course: Course;
+  author: User;
 };
 
 export default async function DashboardPage() {
@@ -30,63 +46,94 @@ export default async function DashboardPage() {
   const isAdmin = isAdministrator(user.role);
   const isStudent = user.role === "STUDENT";
 
+  const courseParams = isAdmin ? [] : [user.id, user.id];
   const courseWhere = isAdmin
-    ? {}
-    : {
-        OR: [
-          { instructorId: user.id },
-          { enrollments: { some: { userId: user.id } } },
-        ],
-      };
-
-  const courses = await prisma.course.findMany({
-    where: courseWhere,
-    include: {
-      instructor: true,
-      _count: { select: { enrollments: true, assignments: true } },
-    },
-    orderBy: { updatedAt: "desc" },
-  });
+    ? ""
+    : `WHERE c."instructorId" = $1 OR EXISTS (
+         SELECT 1 FROM "Enrollment" e
+         WHERE e."courseId" = c."id" AND e."userId" = $2
+       )`;
+  const courseRows = await db.query<
+    Course & { instructor: User; enrollmentCount: number; assignmentCount: number }
+  >(
+    `SELECT c.*, to_jsonb(u) AS "instructor",
+       (SELECT COUNT(*)::int FROM "Enrollment" e WHERE e."courseId" = c."id") AS "enrollmentCount",
+       (SELECT COUNT(*)::int FROM "Assignment" a WHERE a."courseId" = c."id") AS "assignmentCount"
+     FROM "Course" c
+     JOIN "User" u ON u."id" = c."instructorId"
+     ${courseWhere}
+     ORDER BY c."updatedAt" DESC`,
+    courseParams,
+  );
+  const courses: DashboardCourse[] = courseRows.map(
+    ({ enrollmentCount, assignmentCount, ...course }) => ({
+      ...course,
+      _count: { enrollments: enrollmentCount, assignments: assignmentCount },
+    }),
+  );
 
   const courseIds = courses.map((course) => course.id);
+  const placeholders = courseIds.map((_, index) => `$${index + 1}`).join(", ");
+  const upcomingParams: unknown[] = [...courseIds];
+  upcomingParams.push(user.id);
+  const studentParam = `$${upcomingParams.length}`;
+  upcomingParams.push(new Date());
+  const dueParam = `$${upcomingParams.length}`;
 
-  const [upcoming, announcements, graded, toGrade] = await Promise.all([
-    prisma.assignment.findMany({
-      where: {
-        courseId: { in: courseIds },
-        dueAt: { gte: new Date() },
-      },
-      include: {
-        course: true,
-        submissions: {
-          where: { studentId: user.id },
-          select: { id: true, grade: true },
-        },
-      },
-      orderBy: { dueAt: "asc" },
-      take: 5,
-    }),
-    prisma.announcement.findMany({
-      where: { courseId: { in: courseIds } },
-      include: { course: true, author: true },
-      orderBy: { createdAt: "desc" },
-      take: 4,
-    }),
+  const [upcoming, announcements, gradedRows, toGradeRows] = await Promise.all([
+    courseIds.length
+      ? db.query<UpcomingAssignment>(
+          `SELECT a.*, to_jsonb(c) AS "course",
+             COALESCE((
+               SELECT jsonb_agg(jsonb_build_object('id', s."id", 'grade', s."grade"))
+               FROM "Submission" s
+               WHERE s."assignmentId" = a."id" AND s."studentId" = ${studentParam}
+             ), '[]'::jsonb) AS "submissions"
+           FROM "Assignment" a
+           JOIN "Course" c ON c."id" = a."courseId"
+           WHERE a."courseId" IN (${placeholders}) AND a."dueAt" >= ${dueParam}
+           ORDER BY a."dueAt" ASC
+           LIMIT 5`,
+          upcomingParams,
+        )
+      : Promise.resolve([] as UpcomingAssignment[]),
+    courseIds.length
+      ? db.query<DashboardAnnouncement>(
+          `SELECT a.*, to_jsonb(c) AS "course", to_jsonb(u) AS "author"
+           FROM "Announcement" a
+           JOIN "Course" c ON c."id" = a."courseId"
+           JOIN "User" u ON u."id" = a."authorId"
+           WHERE a."courseId" IN (${placeholders})
+           ORDER BY a."createdAt" DESC
+           LIMIT 4`,
+          courseIds,
+        )
+      : Promise.resolve([] as DashboardAnnouncement[]),
     isStudent
-      ? prisma.submission.aggregate({
-          where: { studentId: user.id, grade: { not: null } },
-          _avg: { grade: true },
-        })
-      : Promise.resolve(null),
-    prisma.submission.count({
-      where: {
-        grade: null,
-        assignment: {
-          course: isAdmin ? {} : { instructorId: user.id },
-        },
-      },
-    }),
+      ? db.sql<{ avg: number | null }>`
+          SELECT AVG("grade")::float8 AS "avg" FROM "Submission"
+          WHERE "studentId" = ${user.id} AND "grade" IS NOT NULL
+        `
+      : Promise.resolve([] as { avg: number | null }[]),
+    isAdmin
+      ? db.sql<{ count: number }>`
+          SELECT COUNT(*)::int AS "count" FROM "Submission" s
+          JOIN "Assignment" a ON a."id" = s."assignmentId"
+          JOIN "Course" c ON c."id" = a."courseId"
+          WHERE s."grade" IS NULL
+        `
+      : db.sql<{ count: number }>`
+          SELECT COUNT(*)::int AS "count" FROM "Submission" s
+          JOIN "Assignment" a ON a."id" = s."assignmentId"
+          JOIN "Course" c ON c."id" = a."courseId"
+          WHERE s."grade" IS NULL AND c."instructorId" = ${user.id}
+        `,
   ]);
+
+  const graded = isStudent
+    ? { _avg: { grade: gradedRows[0]?.avg ?? null } }
+    : null;
+  const toGrade = toGradeRows[0]!.count;
 
   const pending = isStudent
     ? upcoming.filter((assignment) => assignment.submissions.length === 0).length

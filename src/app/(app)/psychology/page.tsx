@@ -7,8 +7,9 @@ import { PageHeader } from "@/components/page-header";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { db } from "@/lib/db";
+import type { PsychologyCase, User } from "@/lib/db-types";
 import { requireUser } from "@/lib/permissions";
-import { prisma } from "@/lib/prisma";
 import { canAccessPsychology, psychologyCategories, psychologyStatuses } from "@/lib/psychology";
 
 export const metadata: Metadata = { title: "Psicología" };
@@ -18,27 +19,61 @@ export default async function PsychologyPage({ searchParams }: {
 }) {
   const user = await requireUser();
   if (!canAccessPsychology(user.role)) notFound();
-  const params = await searchParams;
-  const q = (params.q ?? "").trim().slice(0, 120);
-  const page = Math.max(1, Math.min(10000, Number.parseInt(params.page ?? "1", 10) || 1));
-  const where = {
-    ...(user.role === "PSYCHOLOGIST" ? { psychologistId: user.id } : {}),
-    ...(q ? { student: { name: { contains: q, mode: "insensitive" as const } } } : {}),
+  const search = await searchParams;
+  const q = (search.q ?? "").trim().slice(0, 120);
+  const page = Math.max(1, Math.min(10000, Number.parseInt(search.page ?? "1", 10) || 1));
+  type CaseRow = Pick<PsychologyCase, "id" | "category" | "status"> & {
+    student: { name: string };
+    psychologist: { name: string };
   };
-  const [cases, count, students, professionals] = await Promise.all([
-    prisma.psychologyCase.findMany({ where, select: {
-      id: true, category: true, status: true,
-      student: { select: { name: true } }, psychologist: { select: { name: true } },
-    }, orderBy: [{ updatedAt: "desc" }, { id: "asc" }], take: 20, skip: (page - 1) * 20 }),
-    prisma.psychologyCase.count({ where }),
-    prisma.user.findMany({ where: { role: "STUDENT", isActive: true }, select: { id: true, name: true, email: true }, orderBy: { name: "asc" } }),
-    prisma.user.findMany({ where: { role: "PSYCHOLOGIST", isActive: true, ...(user.role === "PSYCHOLOGIST" ? { id: user.id } : {}) }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  if (user.role === "PSYCHOLOGIST") {
+    params.push(user.id);
+    conditions.push(`pc."psychologistId" = $${params.length}`);
+  }
+  if (q) {
+    params.push(`%${q}%`);
+    conditions.push(`su."name" ILIKE $${params.length}`);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  const from = `FROM "PsychologyCase" pc
+    JOIN "User" su ON su."id" = pc."studentId"
+    JOIN "User" pu ON pu."id" = pc."psychologistId"`;
+  const caseParams = [...params, 20, (page - 1) * 20];
+  const [cases, countRows, students, professionals] = await Promise.all([
+    db.query<CaseRow>(
+      `SELECT pc."id", pc."category", pc."status",
+         jsonb_build_object('name', su."name") AS "student",
+         jsonb_build_object('name', pu."name") AS "psychologist"
+       ${from}
+       ${where}
+       ORDER BY pc."updatedAt" DESC, pc."id" ASC
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      caseParams,
+    ),
+    db.query<{ count: number }>(`SELECT COUNT(*)::int AS "count" ${from} ${where}`, params),
+    db.sql<Pick<User, "id" | "name" | "email">>`
+      SELECT "id", "name", "email" FROM "User"
+      WHERE "role" = 'STUDENT' AND "isActive" = TRUE ORDER BY "name" ASC
+    `,
+    user.role === "PSYCHOLOGIST"
+      ? db.sql<Pick<User, "id" | "name">>`
+          SELECT "id", "name" FROM "User"
+          WHERE "role" = 'PSYCHOLOGIST' AND "isActive" = TRUE AND "id" = ${user.id}
+          ORDER BY "name" ASC
+        `
+      : db.sql<Pick<User, "id" | "name">>`
+          SELECT "id", "name" FROM "User"
+          WHERE "role" = 'PSYCHOLOGIST' AND "isActive" = TRUE ORDER BY "name" ASC
+        `,
   ]);
+  const count = countRows[0]!.count;
   return <div>
     <PageHeader title="Psicología" description={user.role === "PSYCHOLOGIST" ? "Tus fichas de atención, citas y seguimiento." : "Derivaciones y citas de orientación escolar."} />
     <div className="space-y-6 p-4 sm:p-8">
-      {params.error && <p role="alert" className="border border-red-200 bg-red-50 p-3 text-sm text-red-800">{params.error}</p>}
-      {params.success && <p role="status" className="border border-green-200 bg-green-50 p-3 text-sm text-green-800">{params.success}</p>}
+      {search.error && <p role="alert" className="border border-red-200 bg-red-50 p-3 text-sm text-red-800">{search.error}</p>}
+      {search.success && <p role="status" className="border border-green-200 bg-green-50 p-3 text-sm text-green-800">{search.success}</p>}
       <section className="space-y-4 border bg-white p-5">
         <h2 className="text-lg font-semibold">Fichas ({count})</h2>
         <form action="/psychology" className="flex gap-3"><Input name="q" defaultValue={q} placeholder="Buscar estudiante" aria-label="Buscar estudiante" maxLength={120} /><Button type="submit" variant="outline">Buscar</Button></form>

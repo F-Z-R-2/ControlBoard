@@ -5,7 +5,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import type { ActionState } from "@/lib/action-state";
-import { prisma } from "@/lib/prisma";
+import { db, newId } from "@/lib/db";
+import type { Assignment, Submission } from "@/lib/db-types";
 import {
   getCourseAccess,
   requireCourseManager,
@@ -37,15 +38,13 @@ export async function createAssignmentAction(formData: FormData) {
     );
   }
 
-  await prisma.assignment.create({
-    data: {
-      courseId,
-      title: parsed.data.title,
-      description: parsed.data.description,
-      points: parsed.data.points,
-      dueAt: parsed.data.dueAt ? new Date(parsed.data.dueAt) : null,
-    },
-  });
+  await db.sql`
+    INSERT INTO "Assignment" ("id", "courseId", "title", "description", "points", "dueAt", "updatedAt")
+    VALUES (
+      ${newId()}, ${courseId}, ${parsed.data.title}, ${parsed.data.description},
+      ${parsed.data.points}, ${parsed.data.dueAt ? new Date(parsed.data.dueAt) : null}, NOW()
+    )
+  `;
 
   revalidatePath(`/courses/${courseId}/assignments`);
   revalidatePath(`/courses/${courseId}`);
@@ -64,9 +63,10 @@ export async function submitAssignmentAction(
     return { error: "El docente no entrega tareas en este curso" };
   }
 
-  const assignment = await prisma.assignment.findFirst({
-    where: { id: assignmentId, courseId },
-  });
+  const assignments = await db.sql<Assignment>`
+    SELECT * FROM "Assignment" WHERE "id" = ${assignmentId} AND "courseId" = ${courseId} LIMIT 1
+  `;
+  const assignment = assignments[0];
   if (!assignment) {
     return { error: "La tarea no existe" };
   }
@@ -98,25 +98,14 @@ export async function submitAssignmentAction(
     return { error: "Escribe una respuesta o adjunta un archivo" };
   }
 
-  await prisma.submission.upsert({
-    where: {
-      assignmentId_studentId: {
-        assignmentId,
-        studentId: user.id,
-      },
-    },
-    update: {
-      text: text || null,
-      fileUrl: fileUrl ?? undefined,
-      submittedAt: new Date(),
-    },
-    create: {
-      assignmentId,
-      studentId: user.id,
-      text: text || null,
-      fileUrl,
-    },
-  });
+  await db.sql`
+    INSERT INTO "Submission" ("id", "assignmentId", "studentId", "text", "fileUrl", "submittedAt")
+    VALUES (${newId()}, ${assignmentId}, ${user.id}, ${text || null}, ${fileUrl ?? null}, NOW())
+    ON CONFLICT ("assignmentId", "studentId") DO UPDATE
+    SET "text" = EXCLUDED."text",
+        "fileUrl" = COALESCE(EXCLUDED."fileUrl", "Submission"."fileUrl"),
+        "submittedAt" = NOW()
+  `;
 
   revalidatePath(`/courses/${courseId}/assignments/${assignmentId}`);
   revalidatePath(`/courses/${courseId}/grades`);
@@ -129,14 +118,14 @@ export async function gradeSubmissionAction(formData: FormData) {
   const assignmentId = String(formData.get("assignmentId") ?? "");
   await requireCourseManager(courseId);
 
-  const submission = await prisma.submission.findFirst({
-    where: {
-      id: submissionId,
-      assignmentId,
-      assignment: { courseId },
-    },
-    include: { assignment: true },
-  });
+  const submissions = await db.sql<Submission & { assignment: Assignment }>`
+    SELECT s.*, to_jsonb(a) AS "assignment"
+    FROM "Submission" s
+    JOIN "Assignment" a ON a."id" = s."assignmentId"
+    WHERE s."id" = ${submissionId} AND s."assignmentId" = ${assignmentId} AND a."courseId" = ${courseId}
+    LIMIT 1
+  `;
+  const submission = submissions[0];
 
   if (!submission) {
     redirect(`/courses/${courseId}/assignments/${assignmentId}?error=Entrega no encontrada`);
@@ -158,14 +147,11 @@ export async function gradeSubmissionAction(formData: FormData) {
 
   const feedback = String(formData.get("feedback") ?? "").trim();
 
-  await prisma.submission.update({
-    where: { id: submission.id },
-    data: {
-      grade: grade.data,
-      feedback: feedback || null,
-      gradedAt: new Date(),
-    },
-  });
+  await db.sql`
+    UPDATE "Submission"
+    SET "grade" = ${grade.data}, "feedback" = ${feedback || null}, "gradedAt" = NOW()
+    WHERE "id" = ${submission.id}
+  `;
 
   revalidatePath(`/courses/${courseId}/assignments/${assignmentId}`);
   revalidatePath(`/courses/${courseId}/grades`);

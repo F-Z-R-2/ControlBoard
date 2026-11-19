@@ -14,9 +14,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import type { LiveSession, Recording } from "@/lib/db-types";
 import { getCourseAccess } from "@/lib/permissions";
 import { formatDateTime } from "@/lib/utils";
+
+type LiveSessionWithRecordings = LiveSession & { recordings: Recording[] };
 
 export default async function LiveSessionPage({
   params,
@@ -26,12 +29,18 @@ export default async function LiveSessionPage({
   const { courseId, sessionId } = await params;
   const { course, canManage } = await getCourseAccess(courseId);
 
-  const liveSession = await prisma.liveSession.findFirst({
-    where: { id: sessionId, courseId: course.id },
-    include: {
-      recordings: { orderBy: { startedAt: "desc" } },
-    },
-  });
+  const liveSessionRows = await db.sql<LiveSessionWithRecordings>`
+    SELECT ls.*, COALESCE((
+      SELECT jsonb_agg(to_jsonb(r) ORDER BY r."startedAt" DESC)
+      FROM "Recording" r
+      WHERE r."liveSessionId" = ls."id"
+    ), '[]'::jsonb) AS recordings
+    FROM "LiveSession" ls
+    WHERE ls."id" = ${sessionId} AND ls."courseId" = ${course.id}
+    LIMIT 1
+  `;
+
+  const liveSession = liveSessionRows[0];
 
   if (!liveSession) notFound();
 

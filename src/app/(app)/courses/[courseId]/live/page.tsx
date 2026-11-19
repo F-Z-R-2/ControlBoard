@@ -13,9 +13,12 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import type { LiveSession } from "@/lib/db-types";
 import { getCourseAccess } from "@/lib/permissions";
 import { formatDateTime } from "@/lib/utils";
+
+type LiveSessionWithCount = LiveSession & { _count: { recordings: number } };
 
 export default async function LivePage({
   params,
@@ -28,11 +31,14 @@ export default async function LivePage({
   const { error } = await searchParams;
   const { course, canManage } = await getCourseAccess(courseId);
 
-  const sessions = await prisma.liveSession.findMany({
-    where: { courseId: course.id },
-    include: { _count: { select: { recordings: true } } },
-    orderBy: { createdAt: "desc" },
-  });
+  const sessions = await db.sql<LiveSessionWithCount>`
+    SELECT ls.*, jsonb_build_object('recordings', (
+      SELECT COUNT(*)::int FROM "Recording" r WHERE r."liveSessionId" = ls."id"
+    )) AS "_count"
+    FROM "LiveSession" ls
+    WHERE ls."courseId" = ${course.id}
+    ORDER BY ls."createdAt" DESC
+  `;
 
   const liveKitReady = Boolean(
     process.env.LIVEKIT_API_KEY &&

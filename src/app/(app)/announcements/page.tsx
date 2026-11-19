@@ -5,8 +5,9 @@ import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { db } from "@/lib/db";
+import type { Announcement, Course, User } from "@/lib/db-types";
 import { getAccessibleCourses } from "@/lib/courses";
-import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/permissions";
 import { formatDateTime } from "@/lib/utils";
 
@@ -17,11 +18,18 @@ export default async function AnnouncementsPage() {
   const courses = await getAccessibleCourses(user);
   const courseIds = courses.map((course) => course.id);
 
-  const announcements = await prisma.announcement.findMany({
-    where: { courseId: { in: courseIds } },
-    include: { course: true, author: true },
-    orderBy: { createdAt: "desc" },
-  });
+  const placeholders = courseIds.map((_, index) => `$${index + 1}`).join(", ");
+  const announcements: (Announcement & { course: Course; author: User })[] = courseIds.length
+    ? await db.query(
+        `SELECT a.*, to_jsonb(c) AS "course", to_jsonb(u) AS "author"
+         FROM "Announcement" a
+         JOIN "Course" c ON c."id" = a."courseId"
+         JOIN "User" u ON u."id" = a."authorId"
+         WHERE a."courseId" IN (${placeholders})
+         ORDER BY a."createdAt" DESC`,
+        courseIds,
+      )
+    : [];
 
   const canManage = user.role === "INSTRUCTOR" || isAdministrator(user.role);
 

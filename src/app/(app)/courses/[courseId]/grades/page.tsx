@@ -7,8 +7,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import type { Assignment, Enrollment, Submission, User } from "@/lib/db-types";
 import { getCourseAccess } from "@/lib/permissions";
+
+type AssignmentWithOwnGrades = Assignment & {
+  submissions: Array<Pick<Submission, "grade" | "feedback">>;
+};
+type EnrollmentWithUser = Enrollment & { user: User };
+type AssignmentWithSubmissions = Assignment & {
+  submissions: Array<Pick<Submission, "studentId" | "grade">>;
+};
 
 export default async function GradesPage({
   params,
@@ -19,16 +28,16 @@ export default async function GradesPage({
   const { course, canManage, user } = await getCourseAccess(courseId);
 
   if (!canManage) {
-    const assignments = await prisma.assignment.findMany({
-      where: { courseId: course.id },
-      include: {
-        submissions: {
-          where: { studentId: user.id },
-          select: { grade: true, feedback: true },
-        },
-      },
-      orderBy: { createdAt: "asc" },
-    });
+    const assignments = await db.sql<AssignmentWithOwnGrades>`
+      SELECT a.*, COALESCE((
+        SELECT jsonb_agg(jsonb_build_object('grade', s."grade", 'feedback', s."feedback"))
+        FROM "Submission" s
+        WHERE s."assignmentId" = a."id" AND s."studentId" = ${user.id}
+      ), '[]'::jsonb) AS submissions
+      FROM "Assignment" a
+      WHERE a."courseId" = ${course.id}
+      ORDER BY a."createdAt" ASC
+    `;
 
     const possible = assignments.reduce(
       (sum, assignment) => sum + assignment.points,
@@ -118,20 +127,23 @@ export default async function GradesPage({
   }
 
   const [enrollments, assignments] = await Promise.all([
-    prisma.enrollment.findMany({
-      where: { courseId: course.id, role: "STUDENT" },
-      include: { user: true },
-      orderBy: { user: { name: "asc" } },
-    }),
-    prisma.assignment.findMany({
-      where: { courseId: course.id },
-      include: {
-        submissions: {
-          select: { studentId: true, grade: true },
-        },
-      },
-      orderBy: { createdAt: "asc" },
-    }),
+    db.sql<EnrollmentWithUser>`
+      SELECT e.*, to_jsonb(u) AS "user"
+      FROM "Enrollment" e
+      JOIN "User" u ON u."id" = e."userId"
+      WHERE e."courseId" = ${course.id} AND e."role"::text = 'STUDENT'
+      ORDER BY u."name" ASC
+    `,
+    db.sql<AssignmentWithSubmissions>`
+      SELECT a.*, COALESCE((
+        SELECT jsonb_agg(jsonb_build_object('studentId', s."studentId", 'grade', s."grade"))
+        FROM "Submission" s
+        WHERE s."assignmentId" = a."id"
+      ), '[]'::jsonb) AS submissions
+      FROM "Assignment" a
+      WHERE a."courseId" = ${course.id}
+      ORDER BY a."createdAt" ASC
+    `,
   ]);
 
   const gradesByStudent = new Map<string, Map<string, number | null>>();

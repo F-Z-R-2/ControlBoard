@@ -7,12 +7,12 @@ ss
 
 - **Next.js 16** (App Router, Server Actions) + React 19
 - **Tailwind CSS 4** + componentes propios
-- **PostgreSQL + Prisma 6**
+- **Neon PostgreSQL** con `@neondatabase/serverless` (SQL directo, sin ORM)
 - **Auth.js v5** con credenciales, sesiones JWT y bcrypt
 - **LiveKit** para video, audio, pantalla compartida, chat y data channels
 - **Excalidraw** para la pizarra colaborativa
 - **Vercel Blob** para archivos de contenido y entregas
-- **Neon** como PostgreSQL recomendado en producción
+- **Neon** como único proveedor de base de datos
 
 ## Funcionalidad
 
@@ -46,21 +46,15 @@ ss
 npm install
 ```
 
-Crea `.env` a partir de `.env.example`. Para una base local sin Docker:
+Crea `.env` a partir de `.env.example` y copia la cadena **pooled** de tu proyecto Neon en `DATABASE_URL`. Para una base vacía, aplica el esquema y los datos demo:
 
 ```bash
-npx prisma dev --detach --name controlboard
-npx prisma dev ls
-```
-
-Copia la URL TCP que imprime `prisma dev ls` en `DATABASE_URL` y `DIRECT_URL`, añadiendo `&pgbouncer=true` a `DATABASE_URL` para que Prisma no use prepared statements a través del proxy de `prisma dev`. Luego:
-
-```bash
-npx prisma db push
-npm run db:generate
+npm run db:schema
 npm run db:seed
 npm run dev
 ```
+
+Si la base ya existe con el esquema anterior, no vuelvas a aplicar `db:schema`: la migración solo cambió la capa de acceso a datos, no las tablas.
 
 Abre `http://localhost:3000`.
 
@@ -82,8 +76,7 @@ Los cursos de ejemplo corresponden a 1° Medio A: Matemática, Lengua y Literatu
 
 | Variable | Obligatoria | Descripción |
 | --- | --- | --- |
-| `DATABASE_URL` | Sí | Cadena pooled de Neon o URL local. |
-| `DIRECT_URL` | Sí | Cadena directa de Neon para Prisma. |
+| `DATABASE_URL` | Sí | Cadena pooled de Neon (`-pooler`). |
 | `AUTH_SECRET` | Sí | Secreto de Auth.js. |
 | `AUTH_TRUST_HOST` | Recomendada | `true` detrás de Vercel/proxy. |
 | `NEXT_PUBLIC_LIVEKIT_URL` | Para video | URL `wss://` del proyecto LiveKit. |
@@ -108,21 +101,19 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 ```bash
 npm run dev          # desarrollo
-npm run build        # prisma generate + next build
+npm run build        # next build
 npm run start        # producción
 npm run lint         # ESLint
 npm run typecheck    # TypeScript
-npm run db:generate  # Prisma Client
-npm run db:push      # sincroniza el esquema
-npm run db:migrate   # crea migraciones
+npm run db:schema    # aplica db/schema.sql (base vacía)
 npm run db:seed      # datos demo
 ```
 
 ## Estructura
 
 ```text
-prisma/
-  schema.prisma        Modelo de datos
+db/
+  schema.sql           Esquema completo para Neon
   seed.ts              Datos demo
 src/
   app/
@@ -132,24 +123,20 @@ src/
     actions/           Server Actions por dominio
     login/ register/   Autenticación
   components/          Shell, tarjetas, formularios, LiveKit y pizarra
-  lib/                 Prisma, permisos y utilidades
+   lib/                 Cliente Neon, permisos y utilidades
   auth.ts              Configuración de Auth.js
 ```
 
 ## Despliegue en Vercel + Neon
 
-1. Crea una base en Neon y copia la cadena **pooled** en `DATABASE_URL` (con `&pgbouncer=true`) y la **direct** en `DIRECT_URL`.
+1. Crea una base en Neon y copia la cadena **pooled** en `DATABASE_URL`.
 2. Crea un proyecto en LiveKit Cloud y agrega `NEXT_PUBLIC_LIVEKIT_URL`, `LIVEKIT_API_KEY` y `LIVEKIT_API_SECRET`.
 3. Para archivos, conecta Vercel Blob y usa `BLOB_READ_WRITE_TOKEN`.
 4. Para grabaciones, configura un bucket S3 y las variables `LIVEKIT_S3_*`. El usuario de S3 necesita permisos de escritura sobre el bucket.
 5. Importa el repositorio en Vercel y define las variables de entorno.
-6. Aplica el esquema a Neon:
-   ```bash
-   npx prisma db push
-   ```
-   Para un flujo productivo, usa `npm run db:migrate` y versiona las migraciones.
+6. Si la base está vacía, aplica el esquema con `npm run db:schema`.
 7. Opcional: ejecuta `npm run db:seed` solo en entornos de demostración.
-8. Despliega. El script de build ejecuta `prisma generate` automáticamente.
+8. Despliega. El script de build es directamente `next build`.
 
 ## Notas y límites actuales
 
@@ -168,14 +155,7 @@ El menú muestra `/administration` solo al personal autorizado. Secretaría gest
 
 Las páginas, acciones y API de LiveKit consultan el estado y rol actuales en la base de datos: desactivar una cuenta bloquea sus siguientes solicitudes, incluso con una sesión JWT existente. Los tokens LiveKit ya emitidos conservan su vigencia hasta expirar; no se expulsa automáticamente a participantes ya conectados.
 
-Para una instalación existente, aplica la actualización aditiva y regenera el cliente antes de iniciar la nueva versión:
-
-```bash
-npx prisma db execute --file prisma/updates/20261117_staff_roles.sql --schema prisma/schema.prisma
-npm run db:generate
-```
-
-Para instalaciones nuevas, `npm run db:push` crea el esquema completo. `npm run db:seed` incluye las cuentas demo de Secretaría y Superadministración; úsalo solo en una base de demostración, porque también actualiza cursos y cuentas demo existentes.
+Las instalaciones existentes conservan su esquema; no hay cambios de DDL en esta migración. Para instalaciones nuevas, `npm run db:schema` crea el esquema completo. `npm run db:seed` incluye las cuentas demo de Secretaría y Superadministración; úsalo solo en una base de demostración, porque también actualiza cursos y cuentas demo existentes.
 
 Para crear el primer superadministrador sin cargar datos de demostración, establece `BOOTSTRAP_EMAIL`, `BOOTSTRAP_NAME` y `BOOTSTRAP_PASSWORD` en el entorno y ejecuta `npm run admin:bootstrap`. El comando solo crea una cuenta nueva y se niega a ejecutarse si ya existe un superadministrador activo o el correo está ocupado.
 
@@ -192,14 +172,7 @@ Validación de la jerarquía de permisos: `npm run test:roles`.
 - Solo se crean registros para estudiantes activos matriculados. Los registros existentes se conservan al retirar la matrícula y pueden corregirse desde el panel de asistencia.
 - No se permiten fechas futuras ni dos registros para el mismo estudiante, curso y día. Las versiones y transacciones evitan sobrescribir modificaciones concurrentes sin avisar.
 
-Para una base existente, aplica primero la actualización de roles descrita arriba y luego ejecuta **una sola vez**:
-
-```bash
-npx prisma db execute --file prisma/updates/20261117_attendance.sql --schema prisma/schema.prisma
-npm run db:generate
-```
-
-En una base nueva, `npm run db:push` incluye ambos módulos. Pruebas de fechas y permisos: `npm run test:attendance`.
+En una base nueva, `npm run db:schema` incluye ambos módulos. Pruebas de fechas y permisos: `npm run test:attendance`.
 
 ## Gestión académica
 
@@ -209,14 +182,7 @@ Los cursos existentes pueden vincularse a una sección y un periodo del mismo a�
 
 Cerrar un año bloquea la modificación de sus periodos, secciones y vinculaciones de cursos. No cierra clases ni bloquea notas o asistencia. Puede reabrirse desde el mismo panel. Un grado compartido por secciones de años cerrados no se puede modificar. No se eliminan registros desde este módulo.
 
-Para bases existentes con los módulos anteriores ya aplicados, ejecuta una sola vez:
-
-```bash
-npx prisma db execute --file prisma/updates/20261117_academics.sql --schema prisma/schema.prisma
-npm run db:generate
-```
-
-Para una base nueva, `npm run db:push` crea la estructura completa. Pruebas: `npm run test:academics`.
+Para una base nueva, `npm run db:schema` crea la estructura completa. Pruebas: `npm run test:academics`.
 
 ## Escalas de calificación configurables
 
@@ -232,13 +198,6 @@ Cada nota conserva una copia de la escala utilizada. Cambiar la configuración n
 
 Esta versión guarda notas del periodo directamente, visibles para el estudiante. El flujo borrador/revisión/cierre por bimestre, la generación de libretas, las ponderaciones y el cálculo automático desde tareas siguen pendientes.
 
-Actualización para bases existentes (una sola vez, después de Gestión académica):
-
-```bash
-npx prisma db execute --file prisma/updates/20261117_grading.sql --schema prisma/schema.prisma
-npm run db:generate
-```
-
 Pruebas: `npm run test:grading`.
 
 ## Psicología
@@ -253,12 +212,5 @@ Administración y Superadministración pueden crear cuentas con el nuevo rol `PS
 - Cerrar una ficha cancela sus citas futuras; conserva citas pasadas y seguimiento. Se permite añadir notas de corrección a fichas cerradas.
 
 Esta primera versión no incluye transferencia de fichas entre profesionales, adjuntos, firma de consentimientos, exportaciones clínicas ni avisos automáticos. La privacidad descrita corresponde a los permisos de la aplicación; no se añadió cifrado de campos ni una auditoría de lectura.
-
-Actualización para bases existentes (una sola vez):
-
-```bash
-npx prisma db execute --file prisma/updates/20261117_psychology.sql --schema prisma/schema.prisma
-npm run db:generate
-```
 
 Pruebas: `npm run test:psychology`.

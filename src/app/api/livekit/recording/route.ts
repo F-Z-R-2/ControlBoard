@@ -8,7 +8,8 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/permissions";
 import { isAdmin } from "@/lib/roles";
-import { prisma } from "@/lib/prisma";
+import { db, newId } from "@/lib/db";
+import type { Course, LiveSession, Recording } from "@/lib/db-types";
 
 const bodySchema = z.object({
   sessionId: z.string().min(1),
@@ -39,10 +40,14 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Solicitud inválida" }, { status: 400 });
   }
 
-  const liveSession = await prisma.liveSession.findUnique({
-    where: { id: parsed.data.sessionId },
-    include: { course: true },
-  });
+  const sessions = await db.sql<LiveSession & { course: Course }>`
+    SELECT ls.*, to_jsonb(c) AS "course"
+    FROM "LiveSession" ls
+    JOIN "Course" c ON c."id" = ls."courseId"
+    WHERE ls."id" = ${parsed.data.sessionId}
+    LIMIT 1
+  `;
+  const liveSession = sessions[0];
 
   if (!liveSession) {
     return Response.json({ error: "Sesión no encontrada" }, { status: 404 });
@@ -86,13 +91,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const existing = await prisma.recording.findFirst({
-      where: {
-        liveSessionId: liveSession.id,
-        status: "PROCESSING",
-      },
-    });
-    if (existing) {
+    const existing = await db.sql<Pick<Recording, "id">>`
+      SELECT "id" FROM "Recording"
+      WHERE "liveSessionId" = ${liveSession.id} AND "status" = 'PROCESSING'
+      LIMIT 1
+    `;
+    if (existing.length) {
       return Response.json(
         { error: "Ya hay una grabación en curso" },
         { status: 409 },
@@ -128,21 +132,21 @@ export async function POST(request: NextRequest) {
       ? `${endpoint.replace(/\/$/, "")}/${bucket}/${filepath}`
       : `https://${bucket}.s3.${region}.amazonaws.com/${filepath}`;
 
-    await prisma.recording.create({
-      data: {
-        liveSessionId: liveSession.id,
-        egressId: info.egressId,
-        url,
-      },
-    });
+    await db.sql`
+      INSERT INTO "Recording" ("id", "liveSessionId", "egressId", "url", "status")
+      VALUES (${newId()}, ${liveSession.id}, ${info.egressId}, ${url}, 'PROCESSING')
+    `;
 
     return Response.json({ ok: true, egressId: info.egressId });
   }
 
-  const recording = await prisma.recording.findFirst({
-    where: { liveSessionId: liveSession.id, status: "PROCESSING" },
-    orderBy: { startedAt: "desc" },
-  });
+  const recordings = await db.sql<Recording>`
+    SELECT * FROM "Recording"
+    WHERE "liveSessionId" = ${liveSession.id} AND "status" = 'PROCESSING'
+    ORDER BY "startedAt" DESC
+    LIMIT 1
+  `;
+  const recording = recordings[0];
 
   if (!recording) {
     return Response.json(
@@ -152,10 +156,10 @@ export async function POST(request: NextRequest) {
   }
 
   await client.stopEgress(recording.egressId);
-  await prisma.recording.update({
-    where: { id: recording.id },
-    data: { status: "READY", endedAt: new Date() },
-  });
+  await db.sql`
+    UPDATE "Recording" SET "status" = 'READY', "endedAt" = NOW()
+    WHERE "id" = ${recording.id}
+  `;
 
   return Response.json({ ok: true });
 }

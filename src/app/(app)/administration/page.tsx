@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import type { Role } from "@prisma/client";
 import Link from "next/link";
 import { saveUserAction, manageEnrollmentAction } from "@/app/actions/administration";
 import { ManagementSubmit } from "@/components/management-submit";
@@ -7,8 +6,9 @@ import { PageHeader } from "@/components/page-header";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { db } from "@/lib/db";
+import type { Course, Role, User } from "@/lib/db-types";
 import { requireStaff } from "@/lib/permissions";
-import { prisma } from "@/lib/prisma";
 import { canManageUser, manageableRoles } from "@/lib/roles";
 import { roleLabel } from "@/lib/utils";
 
@@ -34,16 +34,47 @@ export default async function AdministrationPage({ searchParams }: { searchParam
   const roles = manageableRoles(actor.role);
   const q = (params.q ?? "").trim().slice(0, 120);
   const page = Math.max(1, Math.min(10000, Number.parseInt(params.page ?? "1", 10) || 1));
-  const where = { role: { in: roles }, ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" as const } }, { email: { contains: q, mode: "insensitive" as const } }] } : {}) };
-  const select = { id: true, name: true, email: true, role: true, isActive: true } as const;
-  const [users, count, editing, students, courses, enrollmentCount] = await Promise.all([
-    prisma.user.findMany({ where, select, orderBy: [{ name: "asc" }, { id: "asc" }], skip: (page - 1) * 20, take: 20 }),
-    prisma.user.count({ where }),
-    params.edit ? prisma.user.findFirst({ where: { id: params.edit, role: { in: roles } }, select }) : null,
-    prisma.user.findMany({ where: { role: "STUDENT" }, select: { id: true, name: true, email: true, isActive: true }, orderBy: { name: "asc" } }),
-    prisma.course.findMany({ select: { id: true, code: true, title: true, _count: { select: { enrollments: true } } }, orderBy: { title: "asc" } }),
-    prisma.enrollment.count(),
+  const roleParams = roles.map((_, index) => `$${index + 1}`).join(", ");
+  const conditions = [`"role" IN (${roleParams})`];
+  const filterParams: unknown[] = [...roles];
+  if (q) {
+    filterParams.push(`%${q}%`);
+    conditions.push(`("name" ILIKE $${filterParams.length} OR "email" ILIKE $${filterParams.length})`);
+  }
+  const where = `WHERE ${conditions.join(" AND ")}`;
+  const [userRows, countRows, editingRows, students, courseRows, enrollmentCountRows] = await Promise.all([
+    db.query<EditableUser>(
+      `SELECT "id", "name", "email", "role", "isActive" FROM "User" ${where}
+       ORDER BY "name" ASC, "id" ASC LIMIT 20 OFFSET $${filterParams.length + 1}`,
+      [...filterParams, (page - 1) * 20],
+    ),
+    db.query<{ count: number }>(`SELECT COUNT(*)::int AS "count" FROM "User" ${where}`, filterParams),
+    params.edit
+      ? db.query<EditableUser>(
+          `SELECT "id", "name", "email", "role", "isActive" FROM "User"
+           WHERE "id" = $1 AND "role" IN (${roleParams}) LIMIT 1`,
+          [params.edit, ...roles],
+        )
+      : Promise.resolve([] as EditableUser[]),
+    db.sql<Pick<User, "id" | "name" | "email" | "isActive">>`
+      SELECT "id", "name", "email", "isActive" FROM "User"
+      WHERE "role" = 'STUDENT' ORDER BY "name" ASC
+    `,
+    db.query<Pick<Course, "id" | "code" | "title"> & { enrollmentCount: number }>(
+      `SELECT c."id", c."code", c."title",
+         (SELECT COUNT(*)::int FROM "Enrollment" e WHERE e."courseId" = c."id") AS "enrollmentCount"
+       FROM "Course" c ORDER BY c."title" ASC`,
+    ),
+    db.sql<{ count: number }>`SELECT COUNT(*)::int AS "count" FROM "Enrollment"`,
   ]);
+  const users = userRows;
+  const count = countRows[0]!.count;
+  const editing = editingRows[0] ?? null;
+  const courses = courseRows.map(({ enrollmentCount, ...course }) => ({
+    ...course,
+    _count: { enrollments: enrollmentCount },
+  }));
+  const enrollmentCount = enrollmentCountRows[0]!.count;
   const editable = editing && canManageUser(actor, editing) ? editing : null;
   const title = actor.role === "SECRETARY" ? "Secretaría" : actor.role === "SUPER_ADMIN" ? "Superadministración" : "Administración";
   const description = actor.role === "SECRETARY" ? "Gestiona estudiantes y matrículas." : actor.role === "SUPER_ADMIN" ? "Gestiona todos los roles y las cuentas del campus." : "Gestiona docentes, estudiantes, Secretaría y matrículas.";

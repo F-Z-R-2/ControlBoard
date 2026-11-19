@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { db, newId } from "@/lib/db";
 import { requireCourseManager } from "@/lib/permissions";
 
 const announcementSchema = z.object({
@@ -28,14 +28,10 @@ export async function createAnnouncementAction(formData: FormData) {
     );
   }
 
-  await prisma.announcement.create({
-    data: {
-      courseId,
-      authorId: user.id,
-      title: parsed.data.title,
-      body: parsed.data.body,
-    },
-  });
+  await db.sql`
+    INSERT INTO "Announcement" ("id", "courseId", "authorId", "title", "body", "updatedAt")
+    VALUES (${newId()}, ${courseId}, ${user.id}, ${parsed.data.title}, ${parsed.data.body}, NOW())
+  `;
 
   revalidatePath(`/courses/${courseId}/announcements`);
   revalidatePath(`/courses/${courseId}`);
@@ -47,7 +43,7 @@ export async function deleteAnnouncementAction(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   await requireCourseManager(courseId);
 
-  await prisma.announcement.deleteMany({ where: { id, courseId } });
+  await db.sql`DELETE FROM "Announcement" WHERE "id" = ${id} AND "courseId" = ${courseId}`;
 
   revalidatePath(`/courses/${courseId}/announcements`);
   revalidatePath(`/courses/${courseId}`);

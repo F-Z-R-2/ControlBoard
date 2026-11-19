@@ -4,8 +4,9 @@ import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { db } from "@/lib/db";
+import type { Assignment, Course, LiveSession } from "@/lib/db-types";
 import { getAccessibleCourses } from "@/lib/courses";
-import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/permissions";
 import { formatDateTime } from "@/lib/utils";
 
@@ -16,19 +17,30 @@ export default async function CalendarPage() {
   const courses = await getAccessibleCourses(user);
   const courseIds = courses.map((course) => course.id);
 
+  const placeholders = courseIds.map((_, index) => `$${index + 1}`).join(", ");
   const [assignments, sessions] = await Promise.all([
-    prisma.assignment.findMany({
-      where: { courseId: { in: courseIds }, dueAt: { not: null } },
-      include: { course: true },
-      orderBy: { dueAt: "asc" },
-      take: 30,
-    }),
-    prisma.liveSession.findMany({
-      where: { courseId: { in: courseIds } },
-      include: { course: true },
-      orderBy: { createdAt: "desc" },
-      take: 20,
-    }),
+    courseIds.length
+      ? db.query<Assignment & { course: Course }>(
+          `SELECT a.*, to_jsonb(c) AS "course"
+           FROM "Assignment" a
+           JOIN "Course" c ON c."id" = a."courseId"
+           WHERE a."courseId" IN (${placeholders}) AND a."dueAt" IS NOT NULL
+           ORDER BY a."dueAt" ASC
+           LIMIT 30`,
+          courseIds,
+        )
+      : Promise.resolve([] as (Assignment & { course: Course })[]),
+    courseIds.length
+      ? db.query<LiveSession & { course: Course }>(
+          `SELECT ls.*, to_jsonb(c) AS "course"
+           FROM "LiveSession" ls
+           JOIN "Course" c ON c."id" = ls."courseId"
+           WHERE ls."courseId" IN (${placeholders})
+           ORDER BY ls."createdAt" DESC
+           LIMIT 20`,
+          courseIds,
+        )
+      : Promise.resolve([] as (LiveSession & { course: Course })[]),
   ]);
 
   return (

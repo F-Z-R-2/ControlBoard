@@ -6,9 +6,10 @@ import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { schoolLevels } from "@/lib/academics";
+import { db } from "@/lib/db";
+import type { AcademicYear, GradingScale } from "@/lib/db-types";
 import { scaleLabel, scaleSchema } from "@/lib/grading";
 import { requireStaff } from "@/lib/permissions";
-import { prisma } from "@/lib/prisma";
 
 export const metadata: Metadata = { title: "Escalas de calificación" };
 
@@ -17,7 +18,14 @@ export default async function GradingSettingsPage({ searchParams }: {
 }) {
   await requireStaff();
   const params = await searchParams;
-  const years = await prisma.academicYear.findMany({ include: { gradingScales: true }, orderBy: { startsOn: "desc" } });
+  const years = await db.query<AcademicYear & { gradingScales: GradingScale[] }>(
+    `SELECT ay.*, COALESCE((
+       SELECT jsonb_agg(to_jsonb(gs) ORDER BY gs."level")
+       FROM "GradingScale" gs WHERE gs."yearId" = ay."id"
+     ), '[]'::jsonb) AS "gradingScales"
+     FROM "AcademicYear" ay
+     ORDER BY ay."startsOn" DESC`,
+  );
   const year = params.year ? years.find(item => item.id === params.year) : years[0];
   if (params.year && !year) notFound();
   return <div>

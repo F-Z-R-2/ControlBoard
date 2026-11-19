@@ -2,7 +2,8 @@ import { AccessToken } from "livekit-server-sdk";
 import type { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/permissions";
 import { isAdmin } from "@/lib/roles";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import type { Course, Enrollment, LiveSession } from "@/lib/db-types";
 
 export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
@@ -15,23 +16,26 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: "Falta el parámetro room" }, { status: 400 });
   }
 
-  const liveSession = await prisma.liveSession.findUnique({
-    where: { roomName },
-    include: {
-      course: {
-        include: {
-          enrollments: {
-            where: { userId: user.id },
-            select: { id: true },
-          },
-        },
-      },
-    },
-  });
+  const sessions = await db.sql<LiveSession & { course: Course }>`
+    SELECT ls.*, to_jsonb(c) AS "course"
+    FROM "LiveSession" ls
+    JOIN "Course" c ON c."id" = ls."courseId"
+    WHERE ls."roomName" = ${roomName}
+    LIMIT 1
+  `;
+  const sessionRow = sessions[0];
 
-  if (!liveSession) {
+  if (!sessionRow) {
     return Response.json({ error: "Sesión no encontrada" }, { status: 404 });
   }
+
+  const enrollments = await db.sql<Pick<Enrollment, "id">>`
+    SELECT "id" FROM "Enrollment" WHERE "courseId" = ${sessionRow.courseId} AND "userId" = ${user.id}
+  `;
+  const liveSession = {
+    ...sessionRow,
+    course: { ...sessionRow.course, enrollments },
+  };
 
   const isManager =
     liveSession.course.instructorId === user.id ||
@@ -75,10 +79,10 @@ export async function GET(request: NextRequest) {
   });
 
   if (liveSession.status === "SCHEDULED") {
-    await prisma.liveSession.update({
-      where: { id: liveSession.id },
-      data: { status: "LIVE", startedAt: new Date() },
-    });
+    await db.sql`
+      UPDATE "LiveSession" SET "status" = 'LIVE', "startedAt" = NOW()
+      WHERE "id" = ${liveSession.id}
+    `;
   }
 
   return Response.json({

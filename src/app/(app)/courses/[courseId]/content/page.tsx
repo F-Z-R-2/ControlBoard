@@ -10,8 +10,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import type { ContentItem, User } from "@/lib/db-types";
 import { getCourseAccess } from "@/lib/permissions";
+
+type ContentItemWithAuthor = ContentItem & { author: User };
 
 const typeLabels = {
   PAGE: "Página",
@@ -27,11 +30,13 @@ export default async function ContentPage({
   const { courseId } = await params;
   const { course, canManage } = await getCourseAccess(courseId);
 
-  const items = await prisma.contentItem.findMany({
-    where: { courseId: course.id },
-    include: { author: true },
-    orderBy: [{ position: "asc" }, { createdAt: "asc" }],
-  });
+  const items = await db.sql<ContentItemWithAuthor>`
+    SELECT c.*, to_jsonb(u) AS author
+    FROM "ContentItem" c
+    JOIN "User" u ON u."id" = c."authorId"
+    WHERE c."courseId" = ${course.id}
+    ORDER BY c."position" ASC, c."createdAt" ASC
+  `;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">

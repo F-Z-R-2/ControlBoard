@@ -15,9 +15,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import type { Announcement, User } from "@/lib/db-types";
 import { getCourseAccess } from "@/lib/permissions";
 import { formatDateTime } from "@/lib/utils";
+
+type AnnouncementWithAuthor = Announcement & { author: User };
 
 export default async function AnnouncementsPage({
   params,
@@ -30,11 +33,13 @@ export default async function AnnouncementsPage({
   const { error } = await searchParams;
   const { course, canManage } = await getCourseAccess(courseId);
 
-  const announcements = await prisma.announcement.findMany({
-    where: { courseId: course.id },
-    include: { author: true },
-    orderBy: { createdAt: "desc" },
-  });
+  const announcements = await db.sql<AnnouncementWithAuthor>`
+    SELECT a.*, to_jsonb(u) AS author
+    FROM "Announcement" a
+    JOIN "User" u ON u."id" = a."authorId"
+    WHERE a."courseId" = ${course.id}
+    ORDER BY a."createdAt" DESC
+  `;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">

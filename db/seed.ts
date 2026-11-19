@@ -1,13 +1,21 @@
-import {
+import bcrypt from "bcryptjs";
+import { db, newId } from "../src/lib/db";
+import type {
   ContentType,
+  Course,
   EnrollmentRole,
   LiveSessionStatus,
-  PrismaClient,
   Role,
-} from "@prisma/client";
-import bcrypt from "bcryptjs";
+} from "../src/lib/db-types";
 
-const prisma = new PrismaClient();
+type IdRow = { id: string };
+type CourseRow = Pick<Course, "id" | "code" | "title">;
+
+function firstId(rows: IdRow[]): string {
+  const row = rows[0];
+  if (!row) throw new Error("No se pudo obtener el identificador de la fila");
+  return row.id;
+}
 
 function dueDate(daysFromNow: number, hour = 23, minute = 59) {
   const date = new Date();
@@ -16,26 +24,108 @@ function dueDate(daysFromNow: number, hour = 23, minute = 59) {
   return date;
 }
 
+async function upsertUser(
+  email: string,
+  name: string,
+  passwordHash: string,
+  role: Role,
+): Promise<string> {
+  return firstId(await db.query<IdRow>(
+    `INSERT INTO "User" ("id", "name", "email", "isActive", "passwordHash", "role", "createdAt", "updatedAt")
+     VALUES ($1, $2, $3, TRUE, $4, $5, NOW(), NOW())
+     ON CONFLICT ("email") DO UPDATE
+     SET "name" = EXCLUDED."name",
+         "passwordHash" = EXCLUDED."passwordHash",
+         "role" = EXCLUDED."role",
+         "isActive" = TRUE,
+         "updatedAt" = NOW()
+     RETURNING "id"`,
+    [newId(), name, email, passwordHash, role],
+  ));
+}
+
+async function upsertCourse(
+  sample: { code: string; title: string; description: string },
+  instructorId: string,
+): Promise<CourseRow> {
+  const rows = await db.query<CourseRow>(
+    `INSERT INTO "Course" ("id", "code", "title", "description", "term", "instructorId", "createdAt", "updatedAt")
+     VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+     ON CONFLICT ("code") DO UPDATE
+     SET "title" = EXCLUDED."title",
+         "description" = EXCLUDED."description",
+         "term" = EXCLUDED."term",
+         "instructorId" = EXCLUDED."instructorId",
+         "updatedAt" = NOW()
+     RETURNING "id", "code", "title"`,
+    [newId(), sample.code, sample.title, sample.description, "2026", instructorId],
+  );
+  const row = rows[0];
+  if (!row) throw new Error("No se pudo crear el curso");
+  return row;
+}
+
+async function ensureEnrollment(
+  courseId: string,
+  userId: string,
+  role: EnrollmentRole,
+): Promise<void> {
+  await db.query<IdRow>(
+    `INSERT INTO "Enrollment" ("id", "courseId", "userId", "role", "createdAt")
+     VALUES ($1, $2, $3, $4, NOW())
+     ON CONFLICT ("courseId", "userId") DO UPDATE
+     SET "role" = EXCLUDED."role"
+     RETURNING "id"`,
+    [newId(), courseId, userId, role],
+  );
+}
+
 async function ensureAssignment(
   courseId: string,
   title: string,
-  data: {
-    description: string;
-    dueAt: Date;
-    points: number;
-  },
-) {
-  const existing = await prisma.assignment.findFirst({
-    where: { courseId, title },
-  });
-
-  if (existing) {
-    return prisma.assignment.update({ where: { id: existing.id }, data });
+  data: { description: string; dueAt: Date; points: number },
+): Promise<string> {
+  const existing = await db.query<IdRow>(
+    `SELECT "id" FROM "Assignment" WHERE "courseId" = $1 AND "title" = $2 LIMIT 1`,
+    [courseId, title],
+  );
+  const current = existing[0];
+  if (current) {
+    return firstId(await db.query<IdRow>(
+      `UPDATE "Assignment"
+       SET "description" = $1, "dueAt" = $2, "points" = $3, "updatedAt" = NOW()
+       WHERE "id" = $4
+       RETURNING "id"`,
+      [data.description, data.dueAt, data.points, current.id],
+    ));
   }
+  return firstId(await db.query<IdRow>(
+    `INSERT INTO "Assignment" ("id", "courseId", "title", "description", "dueAt", "points", "createdAt", "updatedAt")
+     VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+     RETURNING "id"`,
+    [newId(), courseId, title, data.description, data.dueAt, data.points],
+  ));
+}
 
-  return prisma.assignment.create({
-    data: { courseId, title, ...data },
-  });
+async function ensureSubmission(
+  assignmentId: string,
+  studentId: string,
+  text: string,
+  grade: number | null,
+  feedback: string | null,
+  gradedAt: Date | null,
+): Promise<void> {
+  await db.query<IdRow>(
+    `INSERT INTO "Submission" ("id", "assignmentId", "studentId", "text", "grade", "feedback", "gradedAt", "submittedAt")
+     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+     ON CONFLICT ("assignmentId", "studentId") DO UPDATE
+     SET "text" = EXCLUDED."text",
+         "grade" = EXCLUDED."grade",
+         "feedback" = EXCLUDED."feedback",
+         "gradedAt" = EXCLUDED."gradedAt"
+     RETURNING "id"`,
+    [newId(), assignmentId, studentId, text, grade, feedback, gradedAt],
+  );
 }
 
 async function ensureAnnouncement(
@@ -43,21 +133,26 @@ async function ensureAnnouncement(
   authorId: string,
   title: string,
   body: string,
-) {
-  const existing = await prisma.announcement.findFirst({
-    where: { courseId, title },
-  });
-
-  if (existing) {
-    return prisma.announcement.update({
-      where: { id: existing.id },
-      data: { body, authorId },
-    });
+): Promise<void> {
+  const existing = await db.query<IdRow>(
+    `SELECT "id" FROM "Announcement" WHERE "courseId" = $1 AND "title" = $2 LIMIT 1`,
+    [courseId, title],
+  );
+  const current = existing[0];
+  if (current) {
+    await db.query(
+      `UPDATE "Announcement"
+       SET "body" = $1, "authorId" = $2, "updatedAt" = NOW()
+       WHERE "id" = $3`,
+      [body, authorId, current.id],
+    );
+    return;
   }
-
-  return prisma.announcement.create({
-    data: { courseId, authorId, title, body },
-  });
+  await db.query(
+    `INSERT INTO "Announcement" ("id", "courseId", "authorId", "title", "body", "createdAt", "updatedAt")
+     VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
+    [newId(), courseId, authorId, title, body],
+  );
 }
 
 async function ensureContent(
@@ -70,72 +165,102 @@ async function ensureContent(
     url?: string;
     position: number;
   },
-) {
-  const existing = await prisma.contentItem.findFirst({
-    where: { courseId, title: data.title },
-  });
-
-  if (existing) {
-    return prisma.contentItem.update({
-      where: { id: existing.id },
-      data: { ...data, authorId },
-    });
+): Promise<void> {
+  const existing = await db.query<IdRow>(
+    `SELECT "id" FROM "ContentItem" WHERE "courseId" = $1 AND "title" = $2 LIMIT 1`,
+    [courseId, data.title],
+  );
+  const current = existing[0];
+  if (current) {
+    await db.query(
+      `UPDATE "ContentItem"
+       SET "title" = $1, "type" = $2, "body" = $3, "url" = $4,
+           "position" = $5, "authorId" = $6, "updatedAt" = NOW()
+       WHERE "id" = $7`,
+      [
+        data.title,
+        data.type,
+        data.body ?? null,
+        data.url ?? null,
+        data.position,
+        authorId,
+        current.id,
+      ],
+    );
+    return;
   }
+  await db.query(
+    `INSERT INTO "ContentItem" ("id", "courseId", "authorId", "title", "type", "body", "url", "position", "createdAt", "updatedAt")
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())`,
+    [
+      newId(),
+      courseId,
+      authorId,
+      data.title,
+      data.type,
+      data.body ?? null,
+      data.url ?? null,
+      data.position,
+    ],
+  );
+}
 
-  return prisma.contentItem.create({
-    data: { courseId, authorId, ...data },
-  });
+async function ensureLiveSession(
+  courseId: string,
+  title: string,
+  roomName: string,
+  status: LiveSessionStatus,
+  createdById: string,
+): Promise<void> {
+  const existing = await db.query<IdRow>(
+    `SELECT "id" FROM "LiveSession" WHERE "courseId" = $1 AND "title" = $2 LIMIT 1`,
+    [courseId, title],
+  );
+  if (existing.length) return;
+  await db.query(
+    `INSERT INTO "LiveSession" ("id", "courseId", "title", "roomName", "status", "createdById", "createdAt")
+     VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+    [newId(), courseId, title, roomName, status, createdById],
+  );
 }
 
 async function main() {
+  await db.query("SELECT 1");
+
   const passwords = {
     admin: await bcrypt.hash("Admin123!", 10),
     instructor: await bcrypt.hash("Profe123!", 10),
     student: await bcrypt.hash("Estudiante123!", 10),
   };
 
-  await prisma.user.upsert({
-    where: { email: "admin@controlboard.dev" },
-    update: { name: "Administración", passwordHash: passwords.admin, role: Role.ADMIN, isActive: true },
-    create: {
-      name: "Administración",
-      email: "admin@controlboard.dev",
-      passwordHash: passwords.admin,
-      role: Role.ADMIN,
-      isActive: true,
-    },
-  });
+  await upsertUser(
+    "admin@controlboard.dev",
+    "Administración",
+    passwords.admin,
+    "ADMIN",
+  );
 
   for (const account of [
-    { email: "superadmin@controlboard.dev", name: "Superadministración", role: Role.SUPER_ADMIN, password: "SuperAdmin123!" },
-    { email: "secretaria@controlboard.dev", name: "Secretaría", role: Role.SECRETARY, password: "Secretaria123!" },
-    { email: "psicologia@controlboard.dev", name: "Psicología", role: Role.PSYCHOLOGIST, password: "Psicologia123!" },
+    { email: "superadmin@controlboard.dev", name: "Superadministración", role: "SUPER_ADMIN" as Role, password: "SuperAdmin123!" },
+    { email: "secretaria@controlboard.dev", name: "Secretaría", role: "SECRETARY" as Role, password: "Secretaria123!" },
+    { email: "psicologia@controlboard.dev", name: "Psicología", role: "PSYCHOLOGIST" as Role, password: "Psicologia123!" },
   ]) {
-    await prisma.user.upsert({
-      where: { email: account.email },
-      update: { name: account.name, role: account.role, passwordHash: await bcrypt.hash(account.password, 10), isActive: true },
-      create: { email: account.email, name: account.name, role: account.role, passwordHash: await bcrypt.hash(account.password, 10), isActive: true },
-    });
+    await upsertUser(
+      account.email,
+      account.name,
+      await bcrypt.hash(account.password, 10),
+      account.role,
+    );
   }
 
-  const instructor = await prisma.user.upsert({
-    where: { email: "instructor@controlboard.dev" },
-    update: {
-      passwordHash: passwords.instructor,
-      role: Role.INSTRUCTOR,
-      name: "Laura Méndez",
-      isActive: true,
-    },
-    create: {
-      name: "Laura Méndez",
-      email: "instructor@controlboard.dev",
-      passwordHash: passwords.instructor,
-      role: Role.INSTRUCTOR,
-      isActive: true,
-    },
-  });
+  const instructorId = await upsertUser(
+    "instructor@controlboard.dev",
+    "Laura Méndez",
+    passwords.instructor,
+    "INSTRUCTOR",
+  );
 
-  const students = [];
+  const studentIds: string[] = [];
   const studentSeeds = [
     { name: "Diego Ramírez", email: "estudiante@controlboard.dev" },
     { name: "Ana Torres", email: "ana@controlboard.dev" },
@@ -146,23 +271,8 @@ async function main() {
   ];
 
   for (const seed of studentSeeds) {
-    students.push(
-      await prisma.user.upsert({
-        where: { email: seed.email },
-        update: {
-          passwordHash: passwords.student,
-          role: Role.STUDENT,
-          name: seed.name,
-          isActive: true,
-        },
-        create: {
-          name: seed.name,
-          email: seed.email,
-          passwordHash: passwords.student,
-          role: Role.STUDENT,
-          isActive: true,
-        },
-      }),
+    studentIds.push(
+      await upsertUser(seed.email, seed.name, passwords.student, "STUDENT"),
     );
   }
 
@@ -176,10 +286,11 @@ async function main() {
     "IND-202620",
     "PRS-202620",
   ];
-
-  await prisma.course.deleteMany({
-    where: { code: { in: legacyCourseCodes } },
-  });
+  const placeholders = legacyCourseCodes.map((_, index) => `$${index + 1}`).join(", ");
+  await db.query(
+    `DELETE FROM "Course" WHERE "code" IN (${placeholders})`,
+    legacyCourseCodes,
+  );
 
   const demoCourses = [
     {
@@ -448,46 +559,19 @@ async function main() {
     },
   ];
 
-  const courses = [];
+  const courses: CourseRow[] = [];
   for (const sample of demoCourses) {
-    courses.push(
-      await prisma.course.upsert({
-        where: { code: sample.code },
-        update: {
-          title: sample.title,
-          description: sample.description,
-          term: "2026",
-          instructorId: instructor.id,
-        },
-        create: {
-          code: sample.code,
-          title: sample.title,
-          description: sample.description,
-          term: "2026",
-          instructorId: instructor.id,
-        },
-      }),
-    );
+    courses.push(await upsertCourse(sample, instructorId));
   }
 
   for (const course of courses) {
-    for (const learner of students) {
-      await prisma.enrollment.upsert({
-        where: {
-          courseId_userId: { courseId: course.id, userId: learner.id },
-        },
-        update: { role: EnrollmentRole.STUDENT },
-        create: {
-          courseId: course.id,
-          userId: learner.id,
-          role: EnrollmentRole.STUDENT,
-        },
-      });
+    for (const studentId of studentIds) {
+      await ensureEnrollment(course.id, studentId, "STUDENT");
     }
   }
 
   for (const [courseIndex, course] of courses.entries()) {
-    const courseSeed = demoCourses[courseIndex];
+    const courseSeed = demoCourses[courseIndex]!;
     const courseAssignments = courseSeed.assignments;
 
     for (const [assignmentIndex, template] of courseAssignments.entries()) {
@@ -497,8 +581,8 @@ async function main() {
         points: template.points,
       });
 
-      for (const [studentIndex, learner] of students.entries()) {
-        const isDemoStudent = learner.id === students[0]?.id;
+      for (const [studentIndex, studentId] of studentIds.entries()) {
+        const isDemoStudent = studentId === studentIds[0];
         const shouldSubmit = isDemoStudent
           ? assignmentIndex === 0
           : (courseIndex + assignmentIndex + studentIndex) % 4 !== 0;
@@ -516,81 +600,58 @@ async function main() {
                     100),
             );
 
-        await prisma.submission.upsert({
-          where: {
-            assignmentId_studentId: {
-              assignmentId: assignment.id,
-              studentId: learner.id,
-            },
-          },
-          update: {
-            text: `Entrega de "${template.title}" para ${course.code}.`,
-            grade,
-            feedback: leaveUngraded
-              ? null
-              : "Buen avance. Revisa la retroalimentación y continúa con la siguiente actividad.",
-            gradedAt: leaveUngraded ? null : new Date(),
-          },
-          create: {
-            assignmentId: assignment.id,
-            studentId: learner.id,
-            text: `Entrega de "${template.title}" para ${course.code}.`,
-            grade,
-            feedback: leaveUngraded
-              ? null
-              : "Buen avance. Revisa la retroalimentación y continúa con la siguiente actividad.",
-            gradedAt: leaveUngraded ? null : new Date(),
-          },
-        });
+        await ensureSubmission(
+          assignment,
+          studentId,
+          `Entrega de "${template.title}" para ${course.code}.`,
+          grade,
+          leaveUngraded
+            ? null
+            : "Buen avance. Revisa la retroalimentación y continúa con la siguiente actividad.",
+          leaveUngraded ? null : new Date(),
+        );
       }
     }
 
     await ensureAnnouncement(
       course.id,
-      instructor.id,
+      instructorId,
       `Bienvenida a ${course.title}`,
       `Hola a todos. Este es el espacio oficial de ${course.code}. Revisa el contenido de la primera semana, revisa las tareas y escríbeme si tienes dudas.`,
     );
     await ensureAnnouncement(
       course.id,
-      instructor.id,
+      instructorId,
       "Recordatorio de entregas",
       "Recuerda revisar el calendario del curso. Las entregas se reciben desde la plataforma y puedes reemplazar tu respuesta antes de la fecha límite.",
     );
 
-    await ensureContent(course.id, instructor.id, {
+    await ensureContent(course.id, instructorId, {
       title: `Programa de ${course.code}`,
-      type: ContentType.PAGE,
+      type: "PAGE",
       body: `Semana 1: introducción y diagnóstico.\nSemana 2: conceptos clave y práctica guiada.\nSemana 3: proyecto de unidad.\nSemana 4: evaluación y cierre.`,
       position: 0,
     });
-    await ensureContent(course.id, instructor.id, {
+    await ensureContent(course.id, instructorId, {
       title: "Guía de estudio de la unidad",
-      type: ContentType.PAGE,
+      type: "PAGE",
       body: "Revisa el material de clase, completa la práctica guiada y prepara tus dudas para la sesión en vivo.",
       position: 1,
     });
-    await ensureContent(course.id, instructor.id, {
+    await ensureContent(course.id, instructorId, {
       title: courseSeed.resource.title,
-      type: ContentType.LINK,
+      type: "LINK",
       url: courseSeed.resource.url,
       position: 2,
     });
 
-    const existingSession = await prisma.liveSession.findFirst({
-      where: { courseId: course.id, title: "Clase de bienvenida" },
-    });
-    if (!existingSession) {
-      await prisma.liveSession.create({
-        data: {
-          courseId: course.id,
-          title: "Clase de bienvenida",
-          roomName: `demo-${course.code.toLowerCase()}`,
-          status: LiveSessionStatus.SCHEDULED,
-          createdById: instructor.id,
-        },
-      });
-    }
+    await ensureLiveSession(
+      course.id,
+      "Clase de bienvenida",
+      `demo-${course.code.toLowerCase()}`,
+      "SCHEDULED",
+      instructorId,
+    );
   }
 
   console.log("Seed completado.");
@@ -608,10 +669,10 @@ async function main() {
 }
 
 main()
+  .then(() => {
+    process.exit(0);
+  })
   .catch((error) => {
     console.error(error);
     process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
   });

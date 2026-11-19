@@ -15,9 +15,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import type { Assignment, Enrollment, Submission, User } from "@/lib/db-types";
 import { getCourseAccess } from "@/lib/permissions";
 import { formatDateTime } from "@/lib/utils";
+
+type SubmissionWithStudent = Submission & { student: User };
+type AssignmentWithSubmissions = Assignment & { submissions: SubmissionWithStudent[] };
+type EnrollmentWithUser = Enrollment & { user: User };
 
 export default async function AssignmentDetailPage({
   params,
@@ -30,25 +35,42 @@ export default async function AssignmentDetailPage({
   const { error, ok } = await searchParams;
   const { course, canManage, user } = await getCourseAccess(courseId);
 
-  const assignment = await prisma.assignment.findFirst({
-    where: { id: assignmentId, courseId: course.id },
-    include: {
-      submissions: {
-        where: canManage ? undefined : { studentId: user.id },
-        include: { student: true },
-        orderBy: { submittedAt: "desc" },
-      },
-    },
-  });
+  const assignmentRows = await db.sql<AssignmentWithSubmissions>`
+    SELECT a.*, COALESCE((
+      SELECT jsonb_agg(jsonb_build_object(
+        'id', s."id",
+        'assignmentId', s."assignmentId",
+        'studentId', s."studentId",
+        'text', s."text",
+        'fileUrl', s."fileUrl",
+        'submittedAt', s."submittedAt",
+        'grade', s."grade",
+        'feedback', s."feedback",
+        'gradedAt', s."gradedAt",
+        'student', to_jsonb(u)
+      ) ORDER BY s."submittedAt" DESC)
+      FROM "Submission" s
+      JOIN "User" u ON u."id" = s."studentId"
+      WHERE s."assignmentId" = a."id"
+        AND (${canManage}::boolean OR s."studentId" = ${user.id})
+    ), '[]'::jsonb) AS submissions
+    FROM "Assignment" a
+    WHERE a."id" = ${assignmentId} AND a."courseId" = ${course.id}
+    LIMIT 1
+  `;
+
+  const assignment = assignmentRows[0];
 
   if (!assignment) notFound();
 
   const enrollments = canManage
-    ? await prisma.enrollment.findMany({
-        where: { courseId: course.id, role: "STUDENT" },
-        include: { user: true },
-        orderBy: { user: { name: "asc" } },
-      })
+    ? await db.sql<EnrollmentWithUser>`
+        SELECT e.*, to_jsonb(u) AS "user"
+        FROM "Enrollment" e
+        JOIN "User" u ON u."id" = e."userId"
+        WHERE e."courseId" = ${course.id} AND e."role"::text = 'STUDENT'
+        ORDER BY u."name" ASC
+      `
     : [];
 
   const submissionByStudent = new Map(

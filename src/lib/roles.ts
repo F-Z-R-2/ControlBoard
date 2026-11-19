@@ -1,4 +1,4 @@
-import type { Role } from "@prisma/client";
+import type { Role } from "@/lib/db-types";
 
 export function isAdmin(role: string) {
   return role === "ADMIN" || role === "SUPER_ADMIN";

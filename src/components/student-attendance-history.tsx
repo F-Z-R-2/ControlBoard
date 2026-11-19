@@ -1,6 +1,6 @@
 "use client";
 
-import type { AttendanceStatus } from "@prisma/client";
+import type { AttendanceStatus } from "@/lib/db-types";
 import { useState } from "react";
 import { attendanceGradePoints, attendanceLabels } from "@/lib/attendance";
 

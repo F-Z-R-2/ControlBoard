@@ -1,10 +1,9 @@
-import { PrismaAdapter } from "@auth/prisma-adapter";
-import type { Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import type { Role, User } from "@/lib/db-types";
 
 const credentialsSchema = z.object({
   email: z.string().email(),
@@ -12,7 +11,6 @@ const credentialsSchema = z.object({
 });
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
   trustHost: true,
   pages: {
@@ -29,9 +27,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const parsed = credentialsSchema.safeParse(credentials);
         if (!parsed.success) return null;
 
-        const user = await prisma.user.findUnique({
-          where: { email: parsed.data.email.toLowerCase() },
-        });
+        const users = await db.sql<User>`
+          SELECT "id", "name", "email", "image", "isActive", "passwordHash", "role"
+          FROM "User" WHERE "email" = ${parsed.data.email.toLowerCase()} LIMIT 1
+        `;
+        const user = users[0];
         if (!user?.isActive || !user.passwordHash) return null;
 
         const valid = await bcrypt.compare(

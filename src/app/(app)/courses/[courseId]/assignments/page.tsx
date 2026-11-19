@@ -14,9 +14,15 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { prisma } from "@/lib/prisma";
+import { db } from "@/lib/db";
+import type { Assignment, Submission, User } from "@/lib/db-types";
 import { getCourseAccess } from "@/lib/permissions";
 import { formatDateTime } from "@/lib/utils";
+
+type AssignmentWithSubmissions = Assignment & {
+  submissions: Array<Pick<Submission, "id" | "grade" | "studentId">>;
+  _count: { submissions: number };
+};
 
 export default async function AssignmentsPage({
   params,
@@ -29,19 +35,25 @@ export default async function AssignmentsPage({
   const { error } = await searchParams;
   const { course, canManage, user } = await getCourseAccess(courseId);
 
-  const assignments = await prisma.assignment.findMany({
-    where: { courseId: course.id },
-    include: {
-      submissions: canManage
-        ? { select: { id: true, grade: true, studentId: true } }
-        : {
-            where: { studentId: user.id },
-            select: { id: true, grade: true, studentId: true },
-          },
-      _count: { select: { submissions: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  const assignments = await db.sql<AssignmentWithSubmissions>`
+    SELECT a.*,
+      COALESCE((
+        SELECT jsonb_agg(jsonb_build_object(
+          'id', s."id",
+          'grade', s."grade",
+          'studentId', s."studentId"
+        ))
+        FROM "Submission" s
+        WHERE s."assignmentId" = a."id"
+          AND (${canManage}::boolean OR s."studentId" = ${user.id})
+      ), '[]'::jsonb) AS submissions,
+      jsonb_build_object('submissions', (
+        SELECT COUNT(*)::int FROM "Submission" sc WHERE sc."assignmentId" = a."id"
+      )) AS "_count"
+    FROM "Assignment" a
+    WHERE a."courseId" = ${course.id}
+    ORDER BY a."createdAt" DESC
+  `;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">

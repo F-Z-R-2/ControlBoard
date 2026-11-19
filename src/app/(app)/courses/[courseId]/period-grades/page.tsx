@@ -3,9 +3,18 @@ import { ManagementSubmit } from "@/components/management-submit";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { gradeLabel, scaleLabel, scaleSchema, validGrade } from "@/lib/grading";
+import { db } from "@/lib/db";
+import type { Enrollment, GradingScale, PeriodGrade, User } from "@/lib/db-types";
+import { gradeLabel, scaleLabel, scaleSchema, validGrade, type GradeScale } from "@/lib/grading";
 import { getCourseAccess } from "@/lib/permissions";
-import { prisma } from "@/lib/prisma";
+
+type GradingScaleWithConfig = Omit<GradingScale, "config"> & { config: GradeScale };
+type PeriodGradeWithSnapshot = Omit<PeriodGrade, "scaleSnapshot"> & { scaleSnapshot: GradeScale };
+type HistoryRecord = PeriodGrade & {
+  student: Pick<User, "name">;
+  period: { name: string; year: { name: string } };
+};
+type EnrollmentRef = { user: Pick<User, "id" | "name"> };
 
 export default async function PeriodGradesPage({ params, searchParams }: {
   params: Promise<{ courseId: string }>;
@@ -14,16 +23,40 @@ export default async function PeriodGradesPage({ params, searchParams }: {
   const { courseId } = await params;
   const query = await searchParams;
   const { course, canManage, user } = await getCourseAccess(courseId);
-  const [scale, enrollments, currentRecords, history] = await Promise.all([
-    course.section ? prisma.gradingScale.findUnique({ where: { yearId_level: { yearId: course.section.yearId, level: course.section.grade.level } } }) : null,
-    canManage ? prisma.enrollment.findMany({ where: { courseId, role: "STUDENT", user: { role: "STUDENT", isActive: true } }, select: { user: { select: { id: true, name: true } } }, orderBy: { user: { name: "asc" } } }) : [],
-    course.academicPeriodId ? prisma.periodGrade.findMany({ where: { courseId, periodId: course.academicPeriodId, ...(canManage ? {} : { studentId: user.id }) } }) : [],
-    prisma.periodGrade.findMany({
-      where: { courseId, ...(canManage ? {} : { studentId: user.id }) },
-      include: { student: { select: { name: true } }, period: { select: { name: true, year: { select: { name: true } } } } },
-      orderBy: { updatedAt: "desc" }, take: 100,
-    }),
+  const [scaleRows, enrollments, currentRecords, history] = await Promise.all([
+    course.section ? db.sql<GradingScaleWithConfig>`
+      SELECT * FROM "GradingScale"
+      WHERE "yearId" = ${course.section.yearId} AND "level"::text = ${course.section.grade.level}
+      LIMIT 1
+    ` : Promise.resolve([] as GradingScaleWithConfig[]),
+    canManage ? db.sql<EnrollmentRef>`
+      SELECT jsonb_build_object('id', u."id", 'name', u."name") AS "user"
+      FROM "Enrollment" e
+      JOIN "User" u ON u."id" = e."userId"
+      WHERE e."courseId" = ${courseId} AND e."role"::text = 'STUDENT'
+        AND u."role"::text = 'STUDENT' AND u."isActive" = true
+      ORDER BY u."name" ASC
+    ` : Promise.resolve([] as EnrollmentRef[]),
+    course.academicPeriodId ? db.sql<PeriodGradeWithSnapshot>`
+      SELECT * FROM "PeriodGrade"
+      WHERE "courseId" = ${courseId} AND "periodId" = ${course.academicPeriodId}
+        AND (${canManage}::boolean OR "studentId" = ${user.id})
+    ` : Promise.resolve([] as PeriodGradeWithSnapshot[]),
+    db.sql<HistoryRecord>`
+      SELECT pg.*,
+        jsonb_build_object('name', s."name") AS student,
+        jsonb_build_object('name', ap."name", 'year', jsonb_build_object('name', ay."name")) AS period
+      FROM "PeriodGrade" pg
+      JOIN "User" s ON s."id" = pg."studentId"
+      JOIN "AcademicPeriod" ap ON ap."id" = pg."periodId"
+      JOIN "AcademicYear" ay ON ay."id" = ap."yearId"
+      WHERE pg."courseId" = ${courseId}
+        AND (${canManage}::boolean OR pg."studentId" = ${user.id})
+      ORDER BY pg."updatedAt" DESC
+      LIMIT 100
+    `,
   ]);
+  const scale = scaleRows[0] ?? null;
   const config = scale ? scaleSchema.parse(scale.config) : null;
   const available = course.section && course.academicPeriod && course.section.yearId === course.academicPeriod.yearId && !course.section.year.isClosed && config && scale;
   return <div className="space-y-6">

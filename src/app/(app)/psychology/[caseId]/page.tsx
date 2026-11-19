@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { PsychologyAppointment } from "@prisma/client";
 import { psychologyAction } from "@/app/actions/psychology";
 import { ManagementSubmit } from "@/components/management-submit";
 import { PageHeader } from "@/components/page-header";
@@ -9,8 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { schoolDate } from "@/lib/attendance";
+import { db } from "@/lib/db";
+import type { PsychologyAppointment, PsychologyCase, PsychologyNote, Role } from "@/lib/db-types";
 import { requireUser } from "@/lib/permissions";
-import { prisma } from "@/lib/prisma";
 import { appointmentStatuses, canAccessPsychology, canManagePsychologyCase, canWritePsychologyNotes, psychologyCategories, psychologyStatuses } from "@/lib/psychology";
 
 export const metadata: Metadata = { title: "Ficha de Psicología" };
@@ -39,21 +39,53 @@ export default async function PsychologyCasePage({ params, searchParams }: {
   if (!canAccessPsychology(user.role)) notFound();
   const { caseId } = await params;
   const query = await searchParams;
-  const record = await prisma.psychologyCase.findUnique({ where: { id: caseId }, select: {
-    id: true, psychologistId: true, category: true, status: true, version: true,
-    student: { select: { name: true, isActive: true } }, psychologist: { select: { name: true, role: true, isActive: true } },
-  } });
+  const records = await db.query<
+    Pick<PsychologyCase, "id" | "psychologistId" | "category" | "status" | "version"> & {
+      student: { name: string; isActive: boolean };
+      psychologist: { name: string; role: Role; isActive: boolean };
+    }
+  >(
+    `SELECT pc."id", pc."psychologistId", pc."category", pc."status", pc."version",
+       jsonb_build_object('name', su."name", 'isActive', su."isActive") AS "student",
+       jsonb_build_object('name', pu."name", 'role', pu."role", 'isActive', pu."isActive") AS "psychologist"
+     FROM "PsychologyCase" pc
+     JOIN "User" su ON su."id" = pc."studentId"
+     JOIN "User" pu ON pu."id" = pc."psychologistId"
+     WHERE pc."id" = $1 LIMIT 1`,
+    [caseId],
+  );
+  const record = records[0] ?? null;
   if (!record || !canManagePsychologyCase(user, record.psychologistId)) notFound();
   const clinical = canWritePsychologyNotes(user, record.psychologistId);
   const notePage = Math.max(1, Math.min(10000, Number.parseInt(query.notePage ?? "1", 10) || 1));
   const now = new Date();
   // Clinical content is not queried at all for administrative users.
-  const [notes, noteCount, upcoming, previous] = await Promise.all([
-    clinical ? prisma.psychologyNote.findMany({ where: { caseId }, select: { id: true, body: true, attendedOn: true, createdAt: true }, orderBy: [{ attendedOn: "desc" }, { createdAt: "desc" }, { id: "asc" }], skip: (notePage - 1) * 20, take: 20 }) : [],
-    clinical ? prisma.psychologyNote.count({ where: { caseId } }) : 0,
-    prisma.psychologyAppointment.findMany({ where: { caseId, status: "SCHEDULED", startsAt: { gte: now } }, orderBy: { startsAt: "asc" }, take: 20 }),
-    prisma.psychologyAppointment.findMany({ where: { caseId, OR: [{ startsAt: { lt: now } }, { status: { not: "SCHEDULED" } }] }, orderBy: { startsAt: "desc" }, take: 20 }),
+  type NoteRow = Pick<PsychologyNote, "id" | "body" | "attendedOn" | "createdAt">;
+  const [notes, noteCountRows, upcoming, previous] = await Promise.all([
+    clinical
+      ? db.query<NoteRow>(
+          `SELECT "id", "body", "attendedOn", "createdAt" FROM "PsychologyNote"
+           WHERE "caseId" = $1
+           ORDER BY "attendedOn" DESC, "createdAt" DESC, "id" ASC
+           LIMIT $2 OFFSET $3`,
+          [caseId, 20, (notePage - 1) * 20],
+        )
+      : Promise.resolve([] as NoteRow[]),
+    clinical
+      ? db.sql<{ count: number }>`SELECT COUNT(*)::int AS "count" FROM "PsychologyNote" WHERE "caseId" = ${caseId}`
+      : Promise.resolve([] as { count: number }[]),
+    db.sql<PsychologyAppointment>`
+      SELECT * FROM "PsychologyAppointment"
+      WHERE "caseId" = ${caseId} AND "status" = 'SCHEDULED' AND "startsAt" >= ${now}
+      ORDER BY "startsAt" ASC LIMIT 20
+    `,
+    db.sql<PsychologyAppointment>`
+      SELECT * FROM "PsychologyAppointment"
+      WHERE "caseId" = ${caseId} AND ("startsAt" < ${now} OR "status" <> 'SCHEDULED')
+      ORDER BY "startsAt" DESC LIMIT 20
+    `,
   ]);
+  const noteCount = noteCountRows[0]?.count ?? 0;
   return <div>
     <PageHeader title="Ficha de Psicología" description={`${record.student.name} · ${psychologyStatuses[record.status]}`} actions={<Link href="/psychology" className="text-sm text-blue-700">Volver a fichas</Link>} />
     <div className="space-y-6 p-4 sm:p-8">

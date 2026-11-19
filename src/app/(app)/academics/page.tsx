@@ -8,8 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { schoolLevels } from "@/lib/academics";
+import { db } from "@/lib/db";
+import type { AcademicPeriod, AcademicYear, Course, SchoolGrade, SchoolSection } from "@/lib/db-types";
 import { requireStaff } from "@/lib/permissions";
-import { prisma } from "@/lib/prisma";
 
 export const metadata: Metadata = { title: "Gestión académica" };
 const dateValue = (date: Date) => date.toISOString().slice(0, 10);
@@ -41,17 +42,62 @@ export default async function AcademicsPage({ searchParams }: {
 }) {
   await requireStaff();
   const params = await searchParams;
-  const [years, grades] = await Promise.all([
-    prisma.academicYear.findMany({ orderBy: { startsOn: "desc" }, include: { _count: { select: { periods: true, sections: true } } } }),
-    prisma.schoolGrade.findMany({ orderBy: [{ level: "asc" }, { position: "asc" }, { name: "asc" }] }),
+  const [yearRows, grades] = await Promise.all([
+    db.query<AcademicYear & { periodCount: number; sectionCount: number }>(
+      `SELECT ay.*,
+         (SELECT COUNT(*)::int FROM "AcademicPeriod" ap WHERE ap."yearId" = ay."id") AS "periodCount",
+         (SELECT COUNT(*)::int FROM "SchoolSection" ss WHERE ss."yearId" = ay."id") AS "sectionCount"
+       FROM "AcademicYear" ay
+       ORDER BY ay."startsOn" DESC`,
+    ),
+    db.sql<SchoolGrade>`SELECT * FROM "SchoolGrade" ORDER BY "level" ASC, "position" ASC, "name" ASC`,
   ]);
+  const years = yearRows.map(({ periodCount, sectionCount, ...item }) => ({
+    ...item,
+    _count: { periods: periodCount, sections: sectionCount },
+  }));
   const year = params.year ? years.find(item => item.id === params.year) : years[0];
   if (params.year && !year) notFound();
-  const [periods, sections, courses] = await Promise.all([
-    year ? prisma.academicPeriod.findMany({ where: { yearId: year.id }, orderBy: { startsOn: "asc" } }) : [],
-    year ? prisma.schoolSection.findMany({ where: { yearId: year.id }, include: { grade: true, _count: { select: { courses: true } } }, orderBy: [{ grade: { position: "asc" } }, { name: "asc" }] }) : [],
-    prisma.course.findMany({ include: { section: { include: { grade: true, year: true } }, academicPeriod: true }, orderBy: { title: "asc" } }),
+  const [periods, sectionRows, courseRows] = await Promise.all([
+    year
+      ? db.sql<AcademicPeriod>`SELECT * FROM "AcademicPeriod" WHERE "yearId" = ${year.id} ORDER BY "startsOn" ASC`
+      : Promise.resolve([] as AcademicPeriod[]),
+    year
+      ? db.query<SchoolSection & { grade: SchoolGrade; courseCount: number }>(
+          `SELECT ss.*, to_jsonb(sg) AS "grade",
+             (SELECT COUNT(*)::int FROM "Course" c WHERE c."sectionId" = ss."id") AS "courseCount"
+           FROM "SchoolSection" ss
+           JOIN "SchoolGrade" sg ON sg."id" = ss."gradeId"
+           WHERE ss."yearId" = $1
+           ORDER BY sg."position" ASC, ss."name" ASC`,
+          [year.id],
+        )
+      : Promise.resolve([] as (SchoolSection & { grade: SchoolGrade; courseCount: number })[]),
+    db.query<
+      Course & {
+        section: (SchoolSection & { grade: SchoolGrade; year: AcademicYear }) | null;
+        academicPeriod: AcademicPeriod | null;
+      }
+    >(
+      `SELECT c.*,
+         CASE WHEN ss."id" IS NULL THEN NULL ELSE jsonb_build_object(
+           'id', ss."id", 'yearId', ss."yearId", 'gradeId', ss."gradeId", 'name', ss."name",
+           'grade', to_jsonb(sg), 'year', to_jsonb(ay)
+         ) END AS "section",
+         CASE WHEN ap."id" IS NULL THEN NULL ELSE to_jsonb(ap) END AS "academicPeriod"
+       FROM "Course" c
+       LEFT JOIN "SchoolSection" ss ON ss."id" = c."sectionId"
+       LEFT JOIN "SchoolGrade" sg ON sg."id" = ss."gradeId"
+       LEFT JOIN "AcademicYear" ay ON ay."id" = ss."yearId"
+       LEFT JOIN "AcademicPeriod" ap ON ap."id" = c."academicPeriodId"
+       ORDER BY c."title" ASC`,
+    ),
   ]);
+  const sections = sectionRows.map(({ courseCount, ...section }) => ({
+    ...section,
+    _count: { courses: courseCount },
+  }));
+  const courses = courseRows;
   return <div>
     <PageHeader title="Gestión académica" description="Organiza años lectivos, periodos, grados y secciones del colegio." />
     <div className="space-y-6 p-4 sm:p-8">

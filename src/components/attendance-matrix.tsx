@@ -1,5 +1,5 @@
 import { Ban, Check, Clock3, X } from "lucide-react";
-import type { AttendanceStatus } from "@prisma/client";
+import type { AttendanceStatus } from "@/lib/db-types";
 import Link from "next/link";
 import { saveAttendanceAction } from "@/app/actions/attendance";
 import { attendanceLabels, attendancePercentage } from "@/lib/attendance";

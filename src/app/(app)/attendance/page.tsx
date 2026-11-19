@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { attendanceLabels, canRecordAttendance, schoolDate, validAttendanceDate } from "@/lib/attendance";
+import { db } from "@/lib/db";
+import type { Attendance, Course, User } from "@/lib/db-types";
 import { requireUser } from "@/lib/permissions";
-import { prisma } from "@/lib/prisma";
 import { isStaff } from "@/lib/roles";
 
 export const metadata: Metadata = { title: "Asistencia" };
@@ -22,13 +23,18 @@ export default async function AttendancePage({ searchParams }: {
   const invalidDate = params.date && (!validAttendanceDate(params.date) || params.date > today);
   const day = !invalidDate && params.date ? params.date : today;
   const date = new Date(`${day}T00:00:00.000Z`);
-  const courses = await prisma.course.findMany({
-    where: isStaff(user.role) ? {} : {
-      OR: [{ instructorId: user.id }, { enrollments: { some: { userId: user.id } } }],
-    },
-    select: { id: true, code: true, title: true, instructorId: true },
-    orderBy: { title: "asc" },
-  });
+  const courses = isStaff(user.role)
+    ? await db.sql<Pick<Course, "id" | "code" | "title" | "instructorId">>`
+        SELECT "id", "code", "title", "instructorId" FROM "Course" ORDER BY "title" ASC
+      `
+    : await db.sql<Pick<Course, "id" | "code" | "title" | "instructorId">>`
+        SELECT c."id", c."code", c."title", c."instructorId" FROM "Course" c
+        WHERE c."instructorId" = ${user.id} OR EXISTS (
+          SELECT 1 FROM "Enrollment" e
+          WHERE e."courseId" = c."id" AND e."userId" = ${user.id}
+        )
+        ORDER BY c."title" ASC
+      `;
   const course = params.course ? courses.find(item => item.id === params.course) : courses[0];
   if (params.course && !course) notFound();
   if (!course) return <div>
@@ -40,29 +46,53 @@ export default async function AttendancePage({ searchParams }: {
   const monthStart = new Date(`${day.slice(0, 7)}-01T00:00:00.000Z`);
   const monthEnd = new Date(monthStart);
   monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1);
+  type StudentInfo = Pick<User, "id" | "name" | "email">;
+  type AttendanceRecord = Attendance & {
+    student: StudentInfo;
+    recordedBy: Pick<User, "name">;
+  };
   const [records, enrollments, history, overallRecords] = await Promise.all([
-    prisma.attendance.findMany({
-      where: { courseId: course.id, date, ...(canManage ? {} : { studentId: user.id }) },
-      include: {
-        student: { select: { id: true, name: true, email: true } },
-        recordedBy: { select: { name: true } },
-      },
-      orderBy: { student: { name: "asc" } },
-    }),
-    canManage ? prisma.enrollment.findMany({
-      where: { courseId: course.id, role: "STUDENT", user: { role: "STUDENT", isActive: true } },
-      select: { user: { select: { id: true, name: true, email: true } } },
-      orderBy: { user: { name: "asc" } },
-    }) : [],
-    !canManage ? prisma.attendance.findMany({
-      where: { courseId: course.id, studentId: user.id, date: { gte: monthStart, lt: monthEnd } },
-      orderBy: { date: "desc" },
-    }) : [],
-    canManage && view === "overall" ? prisma.attendance.findMany({
-      where: { courseId: course.id },
-      include: { student: { select: { id: true, name: true, email: true } } },
-      orderBy: { date: "asc" },
-    }) : [],
+    db.query<AttendanceRecord>(
+      `SELECT a.*,
+         jsonb_build_object('id', u."id", 'name', u."name", 'email', u."email") AS "student",
+         jsonb_build_object('name', r."name") AS "recordedBy"
+       FROM "Attendance" a
+       JOIN "User" u ON u."id" = a."studentId"
+       JOIN "User" r ON r."id" = a."recordedById"
+       WHERE a."courseId" = $1 AND a."date" = $2 ${canManage ? "" : `AND a."studentId" = $3`}
+       ORDER BY u."name" ASC`,
+      canManage ? [course.id, date] : [course.id, date, user.id],
+    ),
+    canManage
+      ? db.query<{ user: StudentInfo }>(
+          `SELECT jsonb_build_object('id', u."id", 'name', u."name", 'email', u."email") AS "user"
+           FROM "Enrollment" e
+           JOIN "User" u ON u."id" = e."userId"
+           WHERE e."courseId" = $1 AND e."role" = 'STUDENT'
+             AND u."role" = 'STUDENT' AND u."isActive" = TRUE
+           ORDER BY u."name" ASC`,
+          [course.id],
+        )
+      : Promise.resolve([] as { user: StudentInfo }[]),
+    !canManage
+      ? db.sql<Attendance>`
+          SELECT * FROM "Attendance"
+          WHERE "courseId" = ${course.id} AND "studentId" = ${user.id}
+            AND "date" >= ${monthStart} AND "date" < ${monthEnd}
+          ORDER BY "date" DESC
+        `
+      : Promise.resolve([] as Attendance[]),
+    canManage && view === "overall"
+      ? db.query<Attendance & { student: StudentInfo }>(
+          `SELECT a.*,
+             jsonb_build_object('id', u."id", 'name', u."name", 'email', u."email") AS "student"
+           FROM "Attendance" a
+           JOIN "User" u ON u."id" = a."studentId"
+           WHERE a."courseId" = $1
+           ORDER BY a."date" ASC`,
+          [course.id],
+        )
+      : Promise.resolve([] as (Attendance & { student: StudentInfo })[]),
   ]);
   const students = new Map(enrollments.map(item => [item.user.id, item.user]));
   for (const record of records) students.set(record.student.id, record.student);
