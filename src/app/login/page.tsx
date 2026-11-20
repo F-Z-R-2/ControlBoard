@@ -87,7 +87,7 @@ export default async function LoginPage({
       <div className="mx-auto flex min-h-svh max-w-[1440px] flex-col px-6 py-6 sm:px-12 sm:py-8 lg:px-20">
         <header className="flex items-center justify-between gap-4 border-b border-white/15 pb-5">
           <Link
-            href="/"
+            href="/login"
             aria-label="Manuel Scorza, inicio"
             className="group flex items-center gap-4 rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-yellow-200"
           >
