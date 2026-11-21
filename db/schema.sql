@@ -254,6 +254,15 @@ CREATE TABLE "PsychologyAppointment" (
     CONSTRAINT "PsychologyAppointment_pkey" PRIMARY KEY ("id")
 );
 
+CREATE TABLE "PsychologyMaterial" (
+    "id" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "url" TEXT NOT NULL,
+    "createdById" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "PsychologyMaterial_pkey" PRIMARY KEY ("id")
+);
+
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 CREATE UNIQUE INDEX "Account_provider_providerAccountId_key" ON "Account"("provider", "providerAccountId");
 CREATE UNIQUE INDEX "Session_sessionToken_key" ON "Session"("sessionToken");
@@ -278,6 +287,7 @@ CREATE INDEX "PsychologyCase_psychologistId_status_idx" ON "PsychologyCase"("psy
 CREATE INDEX "PsychologyNote_caseId_attendedOn_idx" ON "PsychologyNote"("caseId", "attendedOn");
 CREATE INDEX "PsychologyAppointment_caseId_startsAt_idx" ON "PsychologyAppointment"("caseId", "startsAt");
 CREATE INDEX "PsychologyAppointment_status_startsAt_idx" ON "PsychologyAppointment"("status", "startsAt");
+CREATE INDEX "PsychologyMaterial_createdAt_idx" ON "PsychologyMaterial"("createdAt" DESC);
 
 ALTER TABLE "Account" ADD CONSTRAINT "Account_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "Session" ADD CONSTRAINT "Session_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -313,3 +323,4 @@ ALTER TABLE "PsychologyCase" ADD CONSTRAINT "PsychologyCase_openedById_fkey" FOR
 ALTER TABLE "PsychologyNote" ADD CONSTRAINT "PsychologyNote_caseId_fkey" FOREIGN KEY ("caseId") REFERENCES "PsychologyCase"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "PsychologyNote" ADD CONSTRAINT "PsychologyNote_authorId_fkey" FOREIGN KEY ("authorId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "PsychologyAppointment" ADD CONSTRAINT "PsychologyAppointment_caseId_fkey" FOREIGN KEY ("caseId") REFERENCES "PsychologyCase"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "PsychologyMaterial" ADD CONSTRAINT "PsychologyMaterial_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

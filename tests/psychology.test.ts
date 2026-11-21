@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { appointmentTime, canAccessPsychology, canManagePsychologyCase, canWritePsychologyNotes, psychologyActionSchema, slotsOverlap } from "../src/lib/psychology";
+import { appointmentTime, canAccessPsychology, canManagePsychologyCase, canManagePsychologyMaterials, canViewPsychologyMaterials, canWritePsychologyNotes, psychologyActionSchema, slotsOverlap } from "../src/lib/psychology";
 import { manageableRoles } from "../src/lib/roles";
 
 test("solo el profesional asignado tiene acceso a notas de atención", () => {
@@ -20,6 +20,14 @@ test("secretaría coordina fichas; otro psicólogo, docentes y estudiantes no ac
   }
   assert.equal(manageableRoles("ADMIN").includes("PSYCHOLOGIST"), true);
   assert.equal(manageableRoles("SECRETARY").includes("PSYCHOLOGIST"), false);
+});
+
+test("estudiantes solo pueden ver materiales, no gestionar ni consultar fichas clínicas", () => {
+  assert.equal(canViewPsychologyMaterials("STUDENT"), true);
+  assert.equal(canManagePsychologyMaterials("STUDENT"), false);
+  assert.equal(canAccessPsychology("STUDENT"), false);
+  assert.equal(canManagePsychologyMaterials("PSYCHOLOGIST"), true);
+  assert.equal(canManagePsychologyMaterials("SECRETARY"), true);
 });
 
 test("la agenda interpreta la hora de Lima y rechaza fechas inexistentes", () => {

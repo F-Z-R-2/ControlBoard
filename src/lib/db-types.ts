@@ -239,3 +239,11 @@ export interface PsychologyAppointment {
   status: PsychologyAppointmentStatus;
   version: number;
 }
+
+export interface PsychologyMaterial {
+  id: string;
+  title: string;
+  url: string;
+  createdById: string;
+  createdAt: Date;
+}
