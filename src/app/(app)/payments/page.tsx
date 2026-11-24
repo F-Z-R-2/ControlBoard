@@ -1,17 +1,12 @@
 import type { Metadata } from "next";
-import { ArrowDownToLine, ReceiptText } from "lucide-react";
+import { ArrowDownToLine, ArrowRight, Plus, ReceiptText, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { setFirstReceiptNumberAction } from "@/app/actions/payments";
-import { IncomeReceiptForm } from "@/components/income-receipt-form";
-import { ManagementSubmit } from "@/components/management-submit";
 import { PageHeader } from "@/components/page-header";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { db } from "@/lib/db";
-import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/permissions";
+import { notFound } from "next/navigation";
 
 export const metadata: Metadata = { title: "Caja y pagos" };
 
@@ -21,7 +16,13 @@ type ReceiptRow = {
   issuedOn: string;
   receivedFrom: string;
   totalAmount: string;
-  issuedByName: string;
+};
+
+type PaymentDashboardData = {
+  count: number;
+  total: string;
+  nextNumber: number;
+  recent: ReceiptRow[] | string;
 };
 
 function limaToday() {
@@ -29,70 +30,59 @@ function limaToday() {
   return `${parts.find((part) => part.type === "year")?.value}-${parts.find((part) => part.type === "month")?.value}-${parts.find((part) => part.type === "day")?.value}`;
 }
 
-function currentMonth() {
-  return limaToday().slice(0, 7);
-}
-
-function isValidMonth(value: string | undefined): value is string {
-  return Boolean(value && /^\d{4}-(0[1-9]|1[0-2])$/.test(value));
-}
-
-export default async function PaymentsPage({ searchParams }: { searchParams: Promise<{ month?: string; error?: string; success?: string }> }) {
+export default async function PaymentsPage() {
   const actor = await requireUser();
   if (!["SECRETARY", "ADMIN", "SUPER_ADMIN"].includes(actor.role)) notFound();
-  const params = await searchParams;
-  const month = isValidMonth(params.month) ? params.month : currentMonth();
+  const today = limaToday();
+  const month = today.slice(0, 7);
   const [yearText, monthText] = month.split("-");
   const year = Number(yearText);
-  const monthIndex = Number(monthText);
-  const nextYear = monthIndex === 12 ? year + 1 : year;
-  const nextMonth = monthIndex === 12 ? 1 : monthIndex + 1;
-  const nextMonthStart = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+  const monthNumber = Number(monthText);
+  const nextMonth = monthNumber === 12 ? `${year + 1}-01-01` : `${year}-${String(monthNumber + 1).padStart(2, "0")}-01`;
   const monthLabel = format(new Date(`${month}-01T12:00:00`), "MMMM yyyy", { locale: es });
-  const [receipts, totalRows, counterRows] = await Promise.all([
-    db.query<ReceiptRow>(
-      `SELECT r."id", r."receiptNumber", r."issuedOn"::text AS "issuedOn", r."receivedFrom", r."totalAmount"::text AS "totalAmount", u."name" AS "issuedByName"
-       FROM "IncomeReceipt" r JOIN "User" u ON u."id" = r."issuedById"
-       WHERE r."issuedOn" >= $1::date AND r."issuedOn" < $2::date
-       ORDER BY r."issuedOn" DESC, r."receiptNumber" DESC`,
-      [`${month}-01`, nextMonthStart],
-    ),
-    db.sql<{ count: number; sum: string | null }>`SELECT COUNT(*)::int AS "count", COALESCE(SUM("totalAmount"), 0)::text AS "sum" FROM "IncomeReceipt"`,
-    db.sql<{ nextNumber: number }>`SELECT "nextNumber" FROM "IncomeReceiptCounter" WHERE "id" = 'main' LIMIT 1`,
-  ]);
-  const monthTotal = receipts.reduce((sum, row) => sum + Math.round(Number(row.totalAmount) * 100), 0) / 100;
-  const dateToday = limaToday();
+  const dashboardRows = await db.query<PaymentDashboardData>(
+    `SELECT
+       (SELECT COUNT(*)::int FROM "IncomeReceipt" WHERE "issuedOn" >= $1::date AND "issuedOn" < $2::date) AS "count",
+       COALESCE((SELECT SUM("totalAmount") FROM "IncomeReceipt" WHERE "issuedOn" >= $1::date AND "issuedOn" < $2::date), 0)::text AS "total",
+       COALESCE((SELECT "nextNumber" FROM "IncomeReceiptCounter" WHERE "id" = 'main' LIMIT 1), 1) AS "nextNumber",
+       COALESCE((
+         SELECT json_agg(recent_receipts)
+         FROM (
+           SELECT "id", "receiptNumber", "issuedOn"::text AS "issuedOn", "receivedFrom", "totalAmount"::text AS "totalAmount"
+           FROM "IncomeReceipt" ORDER BY "createdAt" DESC LIMIT 5
+         ) AS recent_receipts
+       ), '[]'::json) AS "recent"`,
+    [`${month}-01`, nextMonth],
+  );
+  const dashboard = dashboardRows[0]!;
+  const recent = typeof dashboard.recent === "string" ? JSON.parse(dashboard.recent) as ReceiptRow[] : dashboard.recent;
+  const totalCents = Math.round(Number(dashboard.total) * 100);
 
   return <div>
-    <PageHeader title="Caja y pagos" description="Captación de ingresos institucionales, recibos y reporte mensual." actions={<a href={`/api/payments/export?month=${month}`} className="inline-flex h-10 items-center gap-2 border border-[#0b3ddb] bg-[#0b3ddb] px-4 text-sm font-medium text-white hover:bg-[#0932b5]"><ArrowDownToLine className="h-4 w-4" />Descargar Excel</a>} />
+    <PageHeader title="Caja y pagos" description="Panel de captación de ingresos de la institución." />
     <div className="space-y-6 p-4 sm:p-8">
-      {params.error && <p role="alert" className="border border-red-200 bg-red-50 p-3 text-sm text-red-800">{params.error}</p>}
-      {params.success && <p role="status" className="border border-green-200 bg-green-50 p-3 text-sm text-green-800">{params.success}</p>}
       <section className="grid gap-3 sm:grid-cols-3">
-        <div className="border border-slate-200 bg-white p-4"><p className="text-sm text-slate-600">Recibos en {monthLabel}</p><p className="mt-1 text-2xl font-semibold">{receipts.length}</p></div>
-        <div className="border border-slate-200 bg-white p-4"><p className="text-sm text-slate-600">Ingresos del mes</p><p className="mt-1 text-2xl font-semibold">S/ {monthTotal.toFixed(2)}</p></div>
-        <div className="border border-slate-200 bg-white p-4"><p className="text-sm text-slate-600">Ingresos registrados</p><p className="mt-1 text-2xl font-semibold">{totalRows[0]?.count ?? 0}</p><p className="text-xs text-slate-500">Total histórico: S/ {Number(totalRows[0]?.sum ?? 0).toFixed(2)}</p></div>
+        <div className="border border-slate-200 bg-white p-5"><p className="flex items-center gap-2 text-sm text-slate-600"><WalletCards className="h-4 w-4 text-blue-700" />Ingresos de {monthLabel}</p><p className="mt-2 text-3xl font-semibold">S/ {(totalCents / 100).toFixed(2)}</p></div>
+        <div className="border border-slate-200 bg-white p-5"><p className="flex items-center gap-2 text-sm text-slate-600"><ReceiptText className="h-4 w-4 text-emerald-700" />Recibos emitidos en el mes</p><p className="mt-2 text-3xl font-semibold">{dashboard.count}</p></div>
+        <div className="border border-slate-200 bg-white p-5"><p className="flex items-center gap-2 text-sm text-slate-600">Siguiente recibo</p><p className="mt-2 text-3xl font-semibold">N.º {String(dashboard.nextNumber).padStart(6, "0")}</p><p className="mt-1 text-xs text-slate-500">Asignación automática al guardar.</p></div>
       </section>
 
-      {receipts.length === 0 && (totalRows[0]?.count ?? 0) === 0 ? <section className="border border-amber-200 bg-amber-50 p-4">
-        <h2 className="font-semibold text-amber-950">Configura el primer número de recibo</h2>
-        <p className="mt-1 text-sm text-amber-900">La numeración empieza en el número que elijas y continúa automáticamente.</p>
-        <form action={setFirstReceiptNumberAction} className="mt-3 flex flex-wrap items-end gap-3"><label className="text-sm">Próximo número<Input name="nextNumber" type="number" min="1" max="9999999" defaultValue={counterRows[0]?.nextNumber ?? 1} required className="max-w-40" /></label><ManagementSubmit variant="outline">Guardar numeración</ManagementSubmit></form>
-      </section> : null}
-
-      <section className="border border-slate-200 bg-white p-5 sm:p-6" aria-labelledby="new-receipt-title">
-        <div className="mb-5 flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center bg-blue-50 text-blue-700"><ReceiptText className="h-5 w-5" /></span><div><h2 id="new-receipt-title" className="text-lg font-semibold">Registrar ingreso</h2><p className="text-sm text-slate-500">Completa los datos y genera el recibo imprimible.</p></div></div>
-        <IncomeReceiptForm today={dateToday} />
+      <section className="grid gap-4 md:grid-cols-2">
+        <Link href="/payments/new" className="group flex min-h-48 flex-col justify-between border border-blue-200 bg-white p-6 transition-colors hover:border-blue-400 hover:bg-blue-50/40">
+          <span className="flex h-11 w-11 items-center justify-center bg-blue-50 text-blue-700"><Plus className="h-6 w-6" /></span>
+          <span><h2 className="text-lg font-semibold">Registrar nuevo ingreso</h2><p className="mt-1 text-sm text-slate-600">Marca los conceptos, ingresa los importes e imprime el recibo.</p></span>
+          <span className="inline-flex items-center gap-2 text-sm font-medium text-blue-700">Abrir registro<ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></span>
+        </Link>
+        <Link href="/payments/history" className="group flex min-h-48 flex-col justify-between border border-slate-200 bg-white p-6 transition-colors hover:border-blue-300 hover:bg-slate-50">
+          <span className="flex h-11 w-11 items-center justify-center bg-emerald-50 text-emerald-700"><ArrowDownToLine className="h-5 w-5" /></span>
+          <span><h2 className="text-lg font-semibold">Historial y Excel mensual</h2><p className="mt-1 text-sm text-slate-600">Busca recibos por mes y descarga el libro de captación con sus totales.</p></span>
+          <span className="inline-flex items-center gap-2 text-sm font-medium text-blue-700">Ver historial<ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></span>
+        </Link>
       </section>
 
-      <section className="border border-slate-200 bg-white p-5 sm:p-6" aria-labelledby="monthly-receipts-title">
-        <div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h2 id="monthly-receipts-title" className="text-lg font-semibold">Registro mensual</h2><p className="mt-1 text-sm text-slate-500">Filtra por mes y descarga el libro con la plantilla de captación.</p></div>
-          <form method="get" action="/payments" className="flex items-end gap-2"><label className="text-sm">Mes<Input type="month" name="month" defaultValue={month} required /></label><Button type="submit" variant="outline">Ver mes</Button></form>
-        </div>
-        <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead><tr className="border-b text-slate-500"><th className="p-3">Fecha</th><th className="p-3">RN N°</th><th className="p-3">Recibido de</th><th className="p-3">Importe</th><th className="p-3">Registró</th><th className="p-3">Recibo</th></tr></thead><tbody>
-          {receipts.map((receipt) => <tr key={receipt.id} className="border-b last:border-0 hover:bg-slate-50"><td className="p-3">{format(new Date(`${receipt.issuedOn}T12:00:00`), "dd/MM/yyyy")}</td><td className="p-3 font-medium">{String(receipt.receiptNumber).padStart(6, "0")}</td><td className="p-3">{receipt.receivedFrom}</td><td className="p-3">S/ {Number(receipt.totalAmount).toFixed(2)}</td><td className="p-3">{receipt.issuedByName}</td><td className="p-3"><Link href={`/payments/${receipt.id}`} className="font-medium text-blue-700 hover:underline">Ver / imprimir</Link></td></tr>)}
-        </tbody></table></div>
-        {receipts.length === 0 && <p className="py-8 text-center text-sm text-slate-500">No hay recibos registrados en {monthLabel}.</p>}
+      <section className="border border-slate-200 bg-white p-5 sm:p-6" aria-labelledby="recent-receipts-title">
+        <div className="mb-4 flex items-center justify-between gap-3"><div><h2 id="recent-receipts-title" className="text-lg font-semibold">Movimientos recientes</h2><p className="mt-1 text-sm text-slate-500">Últimos recibos registrados en caja.</p></div><Link href="/payments/history" className="text-sm font-medium text-blue-700 hover:underline">Ver historial completo</Link></div>
+        {recent.length ? <div className="divide-y divide-slate-100">{recent.map((receipt) => <Link key={receipt.id} href={`/payments/${receipt.id}`} className="flex flex-wrap items-center justify-between gap-2 py-3 hover:bg-slate-50"><span><span className="font-medium">{receipt.receivedFrom}</span><span className="ml-2 text-xs text-slate-500">N.º {String(receipt.receiptNumber).padStart(6, "0")} · {format(new Date(`${receipt.issuedOn}T12:00:00`), "dd/MM/yyyy")}</span></span><span className="font-semibold tabular-nums">S/ {Number(receipt.totalAmount).toFixed(2)}</span></Link>)}</div> : <p className="py-8 text-center text-sm text-slate-500">Aún no hay ingresos registrados. Usa “Registrar nuevo ingreso” para emitir el primer recibo.</p>}
       </section>
     </div>
   </div>;

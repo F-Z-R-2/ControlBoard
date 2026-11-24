@@ -14,9 +14,5 @@ export const incomeConcepts = [
   { code: "CONST_VACANTE", label: "Const. Vacante", reportCode: "CV" },
   { code: "AGENDA_ESCOLAR", label: "Agenda Escolar", reportCode: "AGEN" },
   { code: "FUT", label: "FUT", reportCode: "FUT" },
-  { code: "OTROS", label: "Otros", reportCode: "" },
+  { code: "OTROS", label: "Otros", reportCode: "REP" },
 ] as const;
-
-export function isIncomeReportCode(value: string): value is (typeof incomeReportCodes)[number] {
-  return (incomeReportCodes as readonly string[]).includes(value);
-}
