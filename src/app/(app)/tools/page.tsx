@@ -1,173 +1,64 @@
-import {
-  BookOpen,
-  CheckCircle2,
-  Database,
-  HardDrive,
-  KeyRound,
-  Video,
-  XCircle,
-} from "lucide-react";
+import { ArrowRight, BookOpen, CalendarDays, GraduationCap, KeyRound, ShieldCheck, UserRound, Users } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { changeOwnPasswordAction, updateOwnProfileAction } from "@/app/actions/profile";
+import { ManagementSubmit } from "@/components/management-submit";
 import { PageHeader } from "@/components/page-header";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { requireUser } from "@/lib/permissions";
+import { isStaff } from "@/lib/roles";
+import { roleLabel } from "@/lib/utils";
 
-export const metadata: Metadata = { title: "Herramientas" };
+export const metadata: Metadata = { title: "Mi perfil y herramientas" };
 
-export default async function ToolsPage() {
+export default async function ToolsPage({ searchParams }: { searchParams: Promise<{ error?: string; success?: string }> }) {
   const user = await requireUser();
+  const messages = await searchParams;
+  const staff = isStaff(user.role);
+  return <div>
+    <PageHeader title="Mi perfil y herramientas" description="Administra tu cuenta y accede a las tareas frecuentes del campus." />
+    <div className="space-y-6 p-4 sm:p-8">
+      {messages.error && <p role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{messages.error}</p>}
+      {messages.success && <p role="status" className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{messages.success}</p>}
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(300px,.8fr)]">
+        <div className="space-y-6">
+          <section className="rounded-lg border border-slate-200 bg-white p-5 sm:p-6" aria-labelledby="profile-heading">
+            <div className="mb-5 flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-md bg-blue-50 text-blue-800"><UserRound className="h-5 w-5" /></span><div><h2 id="profile-heading" className="text-base font-semibold text-slate-950">Perfil de usuario</h2><p className="mt-1 text-xs text-slate-500">Actualiza el nombre y el correo de inicio de sesión.</p></div></div>
+            <form action={updateOwnProfileAction} className="grid gap-4 sm:grid-cols-2">
+              <label className="text-sm font-medium text-slate-700">Nombre completo<Input name="name" defaultValue={user.name ?? ""} autoComplete="name" minLength={2} maxLength={120} required className="mt-1.5" /></label>
+              <label className="text-sm font-medium text-slate-700">Correo electrónico<Input name="email" type="email" defaultValue={user.email ?? ""} autoComplete="email" maxLength={254} required className="mt-1.5" /></label>
+              <div className="flex items-center justify-between gap-3 sm:col-span-2"><p className="text-xs text-slate-500">Rol actual: <span className="font-medium text-slate-700">{roleLabel(user.role)}</span></p><ManagementSubmit>Guardar perfil</ManagementSubmit></div>
+            </form>
+          </section>
 
-  const integrations = [
-    {
-      name: "Base de datos",
-      description: "Neon serverless para usuarios, cursos y entregas.",
-      ready: Boolean(process.env.DATABASE_URL),
-      icon: Database,
-      action: "Configura DATABASE_URL y npm run db:schema",
-    },
-    {
-      name: "Aulas en vivo",
-      description: "LiveKit para video, audio, pantalla y pizarra colaborativa.",
-      ready: Boolean(
-        process.env.LIVEKIT_API_KEY &&
-          process.env.LIVEKIT_API_SECRET &&
-          process.env.NEXT_PUBLIC_LIVEKIT_URL,
-      ),
-      icon: Video,
-      action: "Configura LIVEKIT_*",
-    },
-    {
-      name: "Archivos",
-      description: "Vercel Blob o S3 para adjuntos de contenido y entregas.",
-      ready: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
-      icon: HardDrive,
-      action: "Configura BLOB_READ_WRITE_TOKEN",
-    },
-  ];
-
-  return (
-    <div className="flex min-h-full flex-col">
-      <PageHeader
-        title="Herramientas"
-        description="Estado del campus, integraciones y accesos rápidos."
-        actions={
-          <Link
-            href="/courses"
-            className="flex items-center gap-2 border border-[#c8c8c8] bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 sm:text-sm"
-          >
-            <BookOpen className="h-4 w-4" />
-            Gestionar cursos
-          </Link>
-        }
-      />
-      <div className="grid gap-6 px-4 py-6 sm:px-8 lg:grid-cols-[1.2fr_1fr]">
-        <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Integraciones</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {integrations.map((integration) => (
-                <div
-                  key={integration.name}
-                  className="flex items-start gap-3 border border-[#e5e5e5] p-4"
-                >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center border border-[#c4d3ff] bg-[#eef3ff] text-[#0b3ddb]">
-                    <integration.icon className="h-4 w-4" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-medium text-[#242424]">
-                        {integration.name}
-                      </p>
-                      {integration.ready ? (
-                        <Badge variant="green">
-                          <CheckCircle2 className="mr-1 h-3 w-3" />
-                          Listo
-                        </Badge>
-                      ) : (
-                        <Badge variant="amber">
-                          <XCircle className="mr-1 h-3 w-3" />
-                          Pendiente
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="mt-1 text-xs leading-5 text-[#666]">
-                      {integration.description}
-                    </p>
-                    {!integration.ready ? (
-                      <p className="mt-1 font-mono text-[10px] text-[#888]">
-                        {integration.action}
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <KeyRound className="h-4 w-4 text-[#0b3ddb]" />
-                Cuentas de demostración
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="divide-y divide-[#e5e5e5] text-sm">
-                <li className="flex flex-wrap items-center justify-between gap-2 py-2 first:pt-0 last:pb-0">
-                  <span className="text-[#555]">Docente</span>
-                  <span className="font-mono text-xs text-[#242424]">
-                    instructor@controlboard.dev / Profe123!
-                  </span>
-                </li>
-                <li className="flex flex-wrap items-center justify-between gap-2 py-2 first:pt-0 last:pb-0">
-                  <span className="text-[#555]">Estudiante</span>
-                  <span className="font-mono text-xs text-[#242424]">
-                    estudiante@controlboard.dev / Estudiante123!
-                  </span>
-                </li>
-                <li className="flex flex-wrap items-center justify-between gap-2 py-2 first:pt-0 last:pb-0">
-                  <span className="text-[#555]">Administración</span>
-                  <span className="font-mono text-xs text-[#242424]">
-                    admin@controlboard.dev / Admin123!
-                  </span>
-                </li>
-              </ul>
-            </CardContent>
-          </Card>
+          <section className="rounded-lg border border-slate-200 bg-white p-5 sm:p-6" aria-labelledby="password-heading">
+            <div className="mb-5 flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-md bg-amber-50 text-amber-800"><KeyRound className="h-5 w-5" /></span><div><h2 id="password-heading" className="text-base font-semibold text-slate-950">Cambiar contraseña</h2><p className="mt-1 text-xs text-slate-500">Confirma tu contraseña actual para guardar una nueva.</p></div></div>
+            <form action={changeOwnPasswordAction} className="grid gap-4 sm:grid-cols-2">
+              <label className="text-sm font-medium text-slate-700 sm:col-span-2">Contraseña actual<Input name="currentPassword" type="password" autoComplete="current-password" required className="mt-1.5" /></label>
+              <label className="text-sm font-medium text-slate-700">Nueva contraseña<Input name="newPassword" type="password" autoComplete="new-password" minLength={8} maxLength={72} required className="mt-1.5" /></label>
+              <label className="text-sm font-medium text-slate-700">Repetir contraseña<Input name="confirmPassword" type="password" autoComplete="new-password" minLength={8} maxLength={72} required className="mt-1.5" /></label>
+              <div className="flex justify-end sm:col-span-2"><ManagementSubmit variant="outline">Actualizar contraseña</ManagementSubmit></div>
+            </form>
+          </section>
         </div>
 
-        <Card className="h-fit">
-          <CardHeader>
-            <CardTitle>Tu cuenta</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex justify-between gap-3 border-b border-[#e5e5e5] pb-2">
-              <span className="text-[#666]">Nombre</span>
-              <span className="text-right font-medium text-[#242424]">
-                {user.name}
-              </span>
+        <aside className="space-y-6">
+          <section className="rounded-lg border border-slate-200 bg-white p-5" aria-labelledby="tools-heading">
+            <div className="mb-4 flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-slate-100 text-slate-700"><ShieldCheck className="h-4 w-4" /></span><div><h2 id="tools-heading" className="text-base font-semibold text-slate-950">Accesos de trabajo</h2><p className="mt-1 text-xs text-slate-500">Funciones del colegio disponibles para tu rol.</p></div></div>
+            <div className="divide-y divide-slate-100">
+              <Link href="/courses" className="flex items-center justify-between gap-3 py-3 text-sm text-slate-700 hover:text-blue-800"><span className="flex items-center gap-2.5"><BookOpen className="h-4 w-4 text-blue-800" />Cursos</span><ArrowRight className="h-3.5 w-3.5" /></Link>
+              <Link href="/calendar" className="flex items-center justify-between gap-3 py-3 text-sm text-slate-700 hover:text-blue-800"><span className="flex items-center gap-2.5"><CalendarDays className="h-4 w-4 text-blue-800" />Calendario</span><ArrowRight className="h-3.5 w-3.5" /></Link>
+              {staff && <>
+                <Link href="/students" className="flex items-center justify-between gap-3 py-3 text-sm text-slate-700 hover:text-blue-800"><span className="flex items-center gap-2.5"><GraduationCap className="h-4 w-4 text-blue-800" />Directorio de estudiantes</span><ArrowRight className="h-3.5 w-3.5" /></Link>
+                <Link href="/administration" className="flex items-center justify-between gap-3 py-3 text-sm text-slate-700 hover:text-blue-800"><span className="flex items-center gap-2.5"><Users className="h-4 w-4 text-blue-800" />Cuentas y restablecimiento de contraseña</span><ArrowRight className="h-3.5 w-3.5" /></Link>
+                <Link href="/academics" className="flex items-center justify-between gap-3 py-3 text-sm text-slate-700 hover:text-blue-800"><span className="flex items-center gap-2.5"><BookOpen className="h-4 w-4 text-blue-800" />Años, periodos y secciones</span><ArrowRight className="h-3.5 w-3.5" /></Link>
+                <Link href="/attendance" className="flex items-center justify-between gap-3 py-3 text-sm text-slate-700 hover:text-blue-800"><span className="flex items-center gap-2.5"><CalendarDays className="h-4 w-4 text-blue-800" />Control de asistencia</span><ArrowRight className="h-3.5 w-3.5" /></Link>
+              </>}
             </div>
-            <div className="flex justify-between gap-3 border-b border-[#e5e5e5] pb-2">
-              <span className="text-[#666]">Correo</span>
-              <span className="text-right font-mono text-xs text-[#242424]">
-                {user.email}
-              </span>
-            </div>
-            <div className="flex justify-between gap-3">
-              <span className="text-[#666]">Rol</span>
-              <Badge variant="slate">{user.role}</Badge>
-            </div>
-            <p className="pt-2 text-xs leading-5 text-[#666]">
-              Este campus es una demostración educativa. Los datos y sesiones
-              viven en tu entorno local.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+          </section>
+          <section className="rounded-lg border border-slate-200 bg-blue-50/60 p-4"><p className="text-sm font-semibold text-slate-900">Seguridad de cuenta</p><p className="mt-1 text-xs leading-5 text-slate-600">Las contraseñas se almacenan con hash. Solo se modifican después de verificar la contraseña actual o desde el formulario de cuentas autorizado.</p></section>
+        </aside>
+      </section>
     </div>
-  );
+  </div>;
 }

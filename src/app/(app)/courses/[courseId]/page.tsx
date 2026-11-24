@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  BarChart3,
   BookOpen,
   CalendarClock,
   ClipboardList,
@@ -187,9 +188,9 @@ export default async function CourseOverviewPage({
         {canManage ? (
           <Card>
             <CardHeader>
-              <CardTitle>Acciones del docente</CardTitle>
+              <CardTitle>Gestión del curso</CardTitle>
               <CardDescription>
-                Publica material y acompaña al grupo.
+                Revisa el grupo, las notas y la comunicación del curso.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
@@ -222,6 +223,27 @@ export default async function CourseOverviewPage({
               >
                 <BookOpen className="h-4 w-4 text-indigo-600" />
                 Agregar contenido
+              </Link>
+              <Link
+                href={`/courses/${course.id}/people`}
+                className={buttonVariants({ variant: "outline", className: "w-full justify-start" })}
+              >
+                <Users className="h-4 w-4 text-indigo-600" />
+                Ver y matricular estudiantes
+              </Link>
+              <Link
+                href={`/courses/${course.id}/grades`}
+                className={buttonVariants({ variant: "outline", className: "w-full justify-start" })}
+              >
+                <BarChart3 className="h-4 w-4 text-indigo-600" />
+                Libro de notas
+              </Link>
+              <Link
+                href={`/courses/${course.id}/attendance`}
+                className={buttonVariants({ variant: "outline", className: "w-full justify-start" })}
+              >
+                <CalendarClock className="h-4 w-4 text-indigo-600" />
+                Control de asistencia
               </Link>
             </CardContent>
           </Card>

@@ -1,65 +1,15 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import {
-  ArrowUpRight,
-  BookOpen,
-  Brain,
-  BriefcaseBusiness,
-  ChevronDown,
-  GraduationCap,
-  MapPin,
-  ShieldCheck,
-  Users,
-} from "lucide-react";
+import { MapPin, ShieldCheck } from "lucide-react";
 
-import { loginAction } from "@/app/actions/auth";
-import { LoginForm, LoginSubmit } from "@/components/login-form";
+import { LoginForm } from "@/components/login-form";
 
 export const metadata: Metadata = {
   title: "Iniciar sesión · I. E. 40122 Manuel Scorza",
   description:
     "Accede al campus virtual de la I. E. 40122 Manuel Scorza, Cerro Juli.",
 };
-
-const demoAccounts = [
-  {
-    label: "Estudiante",
-    email: "estudiante@controlboard.dev",
-    password: "Estudiante123!",
-    icon: GraduationCap,
-  },
-  {
-    label: "Docente",
-    email: "instructor@controlboard.dev",
-    password: "Profe123!",
-    icon: BookOpen,
-  },
-  {
-    label: "Secretaría",
-    email: "secretaria@controlboard.dev",
-    password: "Secretaria123!",
-    icon: BriefcaseBusiness,
-  },
-  {
-    label: "Psicología",
-    email: "psicologia@controlboard.dev",
-    password: "Psicologia123!",
-    icon: Brain,
-  },
-  {
-    label: "Administrador",
-    email: "admin@controlboard.dev",
-    password: "Admin123!",
-    icon: Users,
-  },
-  {
-    label: "Superadministrador",
-    email: "superadmin@controlboard.dev",
-    password: "SuperAdmin123!",
-    icon: ShieldCheck,
-  },
-];
 
 export default async function LoginPage({
   searchParams,
@@ -164,42 +114,6 @@ export default async function LoginPage({
               </Link>
             </p>
 
-            <details className="group mt-8 border-t border-white/20 pt-4">
-              <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 rounded text-xs text-white/80 focus-visible:outline-2 focus-visible:outline-yellow-200 [&::-webkit-details-marker]:hidden">
-                <span>Explorar con una cuenta de prueba</span>
-                <ChevronDown
-                  aria-hidden="true"
-                  className="h-4 w-4 transition-transform group-open:rotate-180"
-                />
-              </summary>
-
-              <p className="mt-2 text-xs leading-5 text-white/60">
-                Selecciona un perfil para entrar a la demostración.
-              </p>
-
-              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-2">
-                {demoAccounts.map(
-                  ({ label, email, password, icon: Icon }) => (
-                    <form key={email} action={loginAction}>
-                      <input type="hidden" name="email" value={email} />
-                      <input type="hidden" name="password" value={password} />
-
-                      <LoginSubmit className="group/item flex min-h-11 w-full items-center gap-2 rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-left text-xs text-white/90 transition-colors hover:border-yellow-200/60 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-yellow-200">
-                        <Icon
-                          aria-hidden="true"
-                          className="h-4 w-4 shrink-0 text-[#edcf60]"
-                        />
-                        <span className="flex-1">{label}</span>
-                        <ArrowUpRight
-                          aria-hidden="true"
-                          className="h-3.5 w-3.5 shrink-0 text-white/50"
-                        />
-                      </LoginSubmit>
-                    </form>
-                  ),
-                )}
-              </div>
-            </details>
           </section>
 
           <aside

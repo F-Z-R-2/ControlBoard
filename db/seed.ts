@@ -225,6 +225,9 @@ async function ensureLiveSession(
 }
 
 async function main() {
+  if (process.env.ENABLE_DEMO_SEED !== "true") {
+    throw new Error("La carga demo está desactivada. Define ENABLE_DEMO_SEED=true solo en una base de demostración.");
+  }
   await db.query("SELECT 1");
 
   const passwords = {

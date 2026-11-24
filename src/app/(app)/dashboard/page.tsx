@@ -1,5 +1,6 @@
 import { isAdmin as isAdministrator } from "@/lib/roles";
 import {
+  Activity,
   ArrowRight,
   BookOpen,
   CalendarClock,
@@ -20,6 +21,7 @@ import { db } from "@/lib/db";
 import type { Announcement, Assignment, Course, Submission, User } from "@/lib/db-types";
 import { requireUser } from "@/lib/permissions";
 import { formatRelative } from "@/lib/utils";
+import { schoolLevels } from "@/lib/academics";
 
 export const metadata: Metadata = {
   title: "Actividad",
@@ -40,10 +42,120 @@ type DashboardAnnouncement = Announcement & {
   author: User;
 };
 
+type AdminMetricRow = { courses: number; students: number; toGrade: number; attendance: number };
+type AdminCourseRow = Course & { instructorName: string; gradeName: string | null; sectionName: string | null; level: "INITIAL" | "PRIMARY" | "SECONDARY" | null; yearName: string | null; studentCount: number };
+type AdminActivityRow = { kind: string; title: string; createdAt: Date; authorName: string; context: string; courseId: string | null };
+
+async function AdminDashboard({ name }: { name: string }) {
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+  const [metricsRows, courses, levels, activity] = await Promise.all([
+    db.sql<AdminMetricRow>`
+      SELECT
+        (SELECT COUNT(*)::int FROM "Course") AS courses,
+        (SELECT COUNT(*)::int FROM "User" WHERE "role" = 'STUDENT' AND "isActive" = TRUE) AS students,
+        (SELECT COUNT(*)::int FROM "Submission" WHERE "grade" IS NULL) AS "toGrade",
+        (SELECT COUNT(*)::int FROM "Attendance" WHERE "date" = ${new Date(`${today}T00:00:00.000Z`)}) AS attendance
+    `,
+    db.query<AdminCourseRow>(
+      `SELECT c.*, u."name" AS "instructorName", sg."name" AS "gradeName", ss."name" AS "sectionName",
+         sg."level", ay."name" AS "yearName",
+         (SELECT COUNT(*)::int FROM "Enrollment" e WHERE e."courseId" = c."id" AND e."role" = 'STUDENT') AS "studentCount"
+       FROM "Course" c JOIN "User" u ON u."id" = c."instructorId"
+       LEFT JOIN "SchoolSection" ss ON ss."id" = c."sectionId"
+       LEFT JOIN "SchoolGrade" sg ON sg."id" = ss."gradeId"
+       LEFT JOIN "AcademicYear" ay ON ay."id" = ss."yearId"
+       ORDER BY c."updatedAt" DESC LIMIT 4`,
+    ),
+    db.sql<{ level: "PRIMARY" | "SECONDARY"; count: number }>`
+      SELECT sg."level", COUNT(*)::int AS count
+      FROM "StudentProfile" sp JOIN "User" u ON u."id" = sp."userId" AND u."isActive" = TRUE
+      JOIN "SchoolSection" ss ON ss."id" = sp."schoolSectionId"
+      JOIN "SchoolGrade" sg ON sg."id" = ss."gradeId"
+      WHERE sg."level" IN ('PRIMARY', 'SECONDARY') GROUP BY sg."level" ORDER BY sg."level"
+    `,
+    db.query<AdminActivityRow>(
+      `SELECT * FROM (
+         SELECT 'Anuncio' AS kind, a."title", a."createdAt", u."name" AS "authorName", c."title" AS context, c."id" AS "courseId"
+           FROM "Announcement" a JOIN "User" u ON u."id" = a."authorId" JOIN "Course" c ON c."id" = a."courseId"
+         UNION ALL
+         SELECT 'Tarea' AS kind, a."title", a."createdAt", c."title" AS "authorName", c."code" AS context, c."id" AS "courseId"
+           FROM "Assignment" a JOIN "Course" c ON c."id" = a."courseId"
+         UNION ALL
+         SELECT 'Matrícula' AS kind, u."name" AS title, e."createdAt", u."name" AS "authorName", c."code" AS context, c."id" AS "courseId"
+           FROM "Enrollment" e JOIN "User" u ON u."id" = e."userId" JOIN "Course" c ON c."id" = e."courseId"
+       ) recent ORDER BY "createdAt" DESC LIMIT 6`,
+    ),
+  ]);
+  const metric = metricsRows[0] ?? { courses: 0, students: 0, toGrade: 0, attendance: 0 };
+  const levelMap = new Map(levels.map((item) => [item.level, item.count]));
+  const maximum = Math.max(1, ...levels.map((item) => item.count));
+  const dateLabel = new Intl.DateTimeFormat("es-PE", { dateStyle: "full", timeZone: "America/Lima" }).format(new Date());
+
+  return <div className="min-h-full bg-[#f4f6f9]">
+    <header className="border-b border-slate-200 bg-white px-5 py-7 sm:px-8 lg:px-10">
+      <div className="mx-auto flex max-w-[1440px] flex-wrap items-end justify-between gap-5">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[.16em] text-[#0b3ddb]">ControlBoard · Gestión institucional</p>
+          <h1 className="mt-2 font-serif text-3xl font-medium tracking-tight text-slate-950 sm:text-4xl">Hola, {name.split(" ")[0]}</h1>
+          <p className="mt-2 text-sm text-slate-600">Panel de Administración <span className="mx-1 text-slate-300">/</span> {dateLabel}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/courses" className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-3.5 text-sm font-medium text-slate-700 hover:bg-slate-50"><BookOpen className="h-4 w-4" /> Ver cursos</Link>
+          <Link href="/courses?create=1" className="inline-flex h-10 items-center gap-2 bg-[#0b3ddb] px-4 text-sm font-medium text-white hover:bg-[#0932b5]"><ArrowRight className="h-4 w-4" /> Crear curso</Link>
+        </div>
+      </div>
+    </header>
+
+    <div className="mx-auto max-w-[1440px] space-y-7 px-5 py-6 sm:px-8 lg:px-10 lg:py-8">
+      <section className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4" aria-label="Indicadores institucionales">
+        {[
+          { label: "Cursos registrados", value: metric.courses, helper: "Oferta académica", icon: BookOpen, color: "blue" },
+          { label: "Por calificar", value: metric.toGrade, helper: "Entregas pendientes", icon: ClipboardCheck, color: "amber" },
+          { label: "Estudiantes activos", value: metric.students, helper: "Cuentas habilitadas", icon: Users, color: "emerald" },
+          { label: "Registros de hoy", value: metric.attendance, helper: "Asistencias tomadas", icon: CalendarClock, color: "violet" },
+        ].map(({ label, value, helper, icon: Icon, color }) => <article key={label} className="relative overflow-hidden rounded-lg border border-slate-200 bg-white p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-medium text-slate-500">{label}</p><p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{value}</p><p className="mt-1 text-[11px] text-slate-500">{helper}</p></div><span className={`flex h-10 w-10 items-center justify-center rounded-md ${color === "blue" ? "bg-blue-50 text-blue-800" : color === "amber" ? "bg-amber-50 text-amber-800" : color === "emerald" ? "bg-emerald-50 text-emerald-800" : "bg-violet-50 text-violet-800"}`}><Icon className="h-4 w-4" /></span></div>
+        </article>)}
+      </section>
+
+      <section className="grid gap-6 2xl:grid-cols-[minmax(0,1.65fr)_minmax(300px,.8fr)]">
+        <div className="space-y-6">
+          <section className="overflow-hidden rounded-lg border border-slate-200 bg-white" aria-labelledby="admin-courses-title">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4"><div><h2 id="admin-courses-title" className="text-base font-semibold text-slate-950">Cursos recientes</h2><p className="mt-1 text-xs text-slate-500">Vista rápida de grupos y responsables.</p></div><Link href="/courses" className="text-xs font-semibold text-blue-800 hover:underline">Ver directorio</Link></div>
+            {courses.length ? <div className="divide-y divide-slate-100">{courses.map((course) => <Link key={course.id} href={`/courses/${course.id}`} className="flex flex-wrap items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-slate-50"><div className="flex min-w-0 items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-blue-50 text-blue-800"><BookOpen className="h-4 w-4" /></span><div className="min-w-0"><p className="truncate text-sm font-semibold text-slate-950">{course.title}</p><p className="mt-1 truncate text-xs text-slate-500">{course.code} · {course.instructorName}</p><p className="mt-1 text-[11px] text-slate-500">{course.level ? `${schoolLevels[course.level]} · ${course.gradeName} ${course.sectionName}` : "Sin sección"}{course.yearName ? ` · ${course.yearName}` : ""}</p></div></div><div className="flex items-center gap-4 text-right"><div><p className="text-sm font-semibold text-slate-900">{course.studentCount}</p><p className="text-[10px] text-slate-500">estudiantes</p></div><ArrowRight className="h-4 w-4 text-slate-400" /></div></Link>)}</div> : <p className="p-8 text-center text-sm text-slate-500">Todavía no hay cursos registrados.</p>}
+          </section>
+
+          <section className="rounded-lg border border-slate-200 bg-white p-5" aria-labelledby="enrollment-level-title">
+            <div className="mb-5 flex items-end justify-between gap-3"><div><h2 id="enrollment-level-title" className="text-base font-semibold text-slate-950">Estudiantes por nivel</h2><p className="mt-1 text-xs text-slate-500">Cuentas activas con sección asignada.</p></div><Link href="/students" className="text-xs font-semibold text-blue-800 hover:underline">Abrir estudiantes</Link></div>
+            <div className="space-y-4">{(["PRIMARY", "SECONDARY"] as const).map((level) => { const count = levelMap.get(level) ?? 0; return <div key={level}><div className="mb-1.5 flex items-center justify-between text-xs"><span className="font-medium text-slate-700">{schoolLevels[level]}</span><span className="tabular-nums text-slate-600">{count}</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-[#0b3ddb] transition-[width]" style={{ width: `${Math.max(count ? 7 : 0, count / maximum * 100)}%` }} /></div></div>; })}</div>
+          </section>
+        </div>
+
+        <aside className="space-y-6">
+          <section className="rounded-lg border border-slate-200 bg-white p-5" aria-labelledby="quick-admin-title">
+            <h2 id="quick-admin-title" className="text-base font-semibold text-slate-950">Accesos administrativos</h2><p className="mt-1 text-xs text-slate-500">Tareas frecuentes del colegio.</p>
+            <div className="mt-4 grid gap-2">{[
+              ["Registrar estudiante", "/students#student-form", GraduationCap],
+              ["Administrar cuentas", "/administration", Users],
+              ["Asistencia diaria", "/attendance", CalendarClock],
+              ["Periodo y secciones", "/academics", BookOpen],
+            ].map(([label, href, Icon]) => <Link key={label as string} href={href as string} className="flex items-center justify-between rounded-md border border-slate-200 px-3 py-3 text-sm font-medium text-slate-700 transition-colors hover:border-blue-200 hover:bg-blue-50/40 hover:text-blue-900"><span className="flex items-center gap-2.5"><Icon className="h-4 w-4 text-blue-800" />{label as string}</span><ArrowRight className="h-3.5 w-3.5 text-slate-400" /></Link>)}</div>
+          </section>
+          <section className="rounded-lg border border-slate-200 bg-white p-5" aria-labelledby="recent-activity-title">
+            <div className="mb-4 flex items-center justify-between"><div><h2 id="recent-activity-title" className="text-base font-semibold text-slate-950">Actividad reciente</h2><p className="mt-1 text-xs text-slate-500">Novedades de cursos y matrículas.</p></div><Activity className="h-4 w-4 text-blue-800" /></div>
+            {activity.length ? <ol className="space-y-4">{activity.map((item, index) => <li key={`${item.kind}-${item.createdAt.toISOString()}-${index}`} className="relative flex gap-3"><span className="relative mt-1.5 flex h-2 w-2 shrink-0"><span className="absolute h-2 w-2 rounded-full bg-blue-700" />{index < activity.length - 1 && <span className="absolute left-[3px] top-2 h-9 w-px bg-slate-200" />}</span><div className="min-w-0"><p className="text-xs font-medium text-slate-800">{item.kind} · {item.title}</p><p className="mt-1 truncate text-[11px] text-slate-500">{item.authorName}{item.context ? ` · ${item.context}` : ""}</p><p className="mt-1 text-[10px] text-slate-400">{formatRelative(item.createdAt)}</p></div></li>)}</ol> : <p className="text-sm text-slate-500">La actividad reciente aparecerá cuando se publiquen anuncios o tareas.</p>}
+          </section>
+        </aside>
+      </section>
+    </div>
+  </div>;
+}
+
 export default async function DashboardPage() {
   const user = await requireUser();
   if (user.role === "PSYCHOLOGIST") redirect("/psychology");
   const isAdmin = isAdministrator(user.role);
+  if (isAdmin) return <AdminDashboard name={user.name ?? "Administración"} />;
   const isStudent = user.role === "STUDENT";
 
   const courseParams = isAdmin ? [] : [user.id, user.id];

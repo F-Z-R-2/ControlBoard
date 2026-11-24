@@ -254,6 +254,30 @@ CREATE TABLE "PsychologyAppointment" (
     CONSTRAINT "PsychologyAppointment_pkey" PRIMARY KEY ("id")
 );
 
+CREATE TABLE "StudentProfile" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "documentNumber" TEXT NOT NULL,
+    "studentCode" TEXT NOT NULL,
+    "schoolSectionId" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "StudentProfile_pkey" PRIMARY KEY ("id")
+);
+
+CREATE TABLE "StudentGuardian" (
+    "id" TEXT NOT NULL,
+    "studentId" TEXT NOT NULL,
+    "fullName" TEXT NOT NULL,
+    "relationship" TEXT NOT NULL,
+    "documentNumber" TEXT,
+    "phone" TEXT,
+    "email" TEXT,
+    "position" INTEGER NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "StudentGuardian_pkey" PRIMARY KEY ("id")
+);
+
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 CREATE UNIQUE INDEX "Account_provider_providerAccountId_key" ON "Account"("provider", "providerAccountId");
 CREATE UNIQUE INDEX "Session_sessionToken_key" ON "Session"("sessionToken");
@@ -274,6 +298,11 @@ CREATE UNIQUE INDEX "GradingScale_yearId_level_key" ON "GradingScale"("yearId", 
 CREATE UNIQUE INDEX "PeriodGrade_courseId_periodId_studentId_key" ON "PeriodGrade"("courseId", "periodId", "studentId");
 CREATE INDEX "PeriodGrade_studentId_periodId_idx" ON "PeriodGrade"("studentId", "periodId");
 CREATE UNIQUE INDEX "PsychologyCase_studentId_key" ON "PsychologyCase"("studentId");
+CREATE UNIQUE INDEX "StudentProfile_userId_key" ON "StudentProfile"("userId");
+CREATE UNIQUE INDEX "StudentProfile_documentNumber_key" ON "StudentProfile"("documentNumber");
+CREATE UNIQUE INDEX "StudentProfile_studentCode_key" ON "StudentProfile"("studentCode");
+CREATE INDEX "StudentProfile_schoolSectionId_idx" ON "StudentProfile"("schoolSectionId");
+CREATE INDEX "StudentGuardian_studentId_idx" ON "StudentGuardian"("studentId");
 CREATE INDEX "PsychologyCase_psychologistId_status_idx" ON "PsychologyCase"("psychologistId", "status");
 CREATE INDEX "PsychologyNote_caseId_attendedOn_idx" ON "PsychologyNote"("caseId", "attendedOn");
 CREATE INDEX "PsychologyAppointment_caseId_startsAt_idx" ON "PsychologyAppointment"("caseId", "startsAt");
@@ -313,3 +342,6 @@ ALTER TABLE "PsychologyCase" ADD CONSTRAINT "PsychologyCase_openedById_fkey" FOR
 ALTER TABLE "PsychologyNote" ADD CONSTRAINT "PsychologyNote_caseId_fkey" FOREIGN KEY ("caseId") REFERENCES "PsychologyCase"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "PsychologyNote" ADD CONSTRAINT "PsychologyNote_authorId_fkey" FOREIGN KEY ("authorId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "PsychologyAppointment" ADD CONSTRAINT "PsychologyAppointment_caseId_fkey" FOREIGN KEY ("caseId") REFERENCES "PsychologyCase"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "StudentProfile" ADD CONSTRAINT "StudentProfile_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "StudentProfile" ADD CONSTRAINT "StudentProfile_schoolSectionId_fkey" FOREIGN KEY ("schoolSectionId") REFERENCES "SchoolSection"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "StudentGuardian" ADD CONSTRAINT "StudentGuardian_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;

@@ -13,8 +13,8 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { createCourseAction, enrollAction } from "@/app/actions/courses";
+import { useMemo, useRef, useState } from "react";
+import { createCourseAction, enrollAction, getSectionStudentsAction } from "@/app/actions/courses";
 import { PageHeader } from "@/components/page-header";
 
 type Course = {
@@ -30,25 +30,26 @@ type InstructorOption = {
   name: string;
 };
 
+type PeriodOption = { id: string; yearId: string; name: string; yearName: string };
+type SectionOption = { id: string; yearId: string; yearName: string; gradeName: string; level: string; name: string };
+type StudentOption = { id: string; name: string; email: string };
+
 type CourseWorkspaceProps = {
   canCreate: boolean;
   requireInstructor: boolean;
+  initialCreate?: boolean;
   instructors: InstructorOption[];
+  periods: PeriodOption[];
+  sections: SectionOption[];
   courses: Course[];
 };
 
-const coverImages = [
-  "photo-1519389950473-47ba0277781c",
-  "photo-1518770660439-4636190af475",
-  "photo-1519608487953-e999c86e7455",
-  "photo-1497366754035-f200968a6e72",
-  "photo-1516321318423-f06f85e504b3",
-  "photo-1500530855697-b586d89ba3ee",
-  "photo-1486406146926-c627a92ad1ab",
+const courseThemes = [
+  "from-[#e6edff] to-[#f8faff] text-[#0b3ddb]",
+  "from-[#e7f3ef] to-[#f8fbfa] text-[#176d52]",
+  "from-[#f6eee4] to-[#fcfaf7] text-[#8a5b21]",
+  "from-[#efebf8] to-[#fbf9fd] text-[#644ca0]",
 ];
-
-const coverUrl = (index: number) =>
-  `https://images.unsplash.com/${coverImages[index % coverImages.length]}?auto=format&fit=crop&w=800&q=80`;
 
 function CourseFilters({
   terms,
@@ -133,14 +134,13 @@ function CourseFilters({
             className={controlClass}
           >
             <option value="all">Todos los cursos</option>
-            <option value="open">Cursos abiertos</option>
             <option value="favorites">Favoritos</option>
           </select>
         </label>
       </div>
       <div className="flex items-center justify-end gap-2 text-xs text-slate-600">
         <SlidersHorizontal className="h-3.5 w-3.5 sm:hidden" />
-        <span>Los cursos se actualizan en tiempo real</span>
+        <span>Busca por código, asignatura o docente.</span>
       </div>
     </div>
   );
@@ -161,27 +161,23 @@ function WorkspaceCourseCard({
 }) {
   return (
     <article
-      className={`group relative border border-[#d4d4d4] bg-white transition-shadow hover:border-[#9caecf] hover:shadow-sm ${
+      className={`group relative overflow-hidden rounded-lg border border-slate-200 bg-white transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md ${
         list ? "flex min-h-[132px] flex-row" : "flex min-h-[300px] flex-col"
       }`}
     >
       <Link
         href={`/courses/${course.id}`}
         aria-label={`Abrir curso ${course.title}`}
-        className={`block shrink-0 bg-slate-200 ${
-          list ? "min-h-[132px] w-[150px] sm:w-[210px]" : "aspect-[16/8.5] w-full"
+        className={`relative flex shrink-0 items-end overflow-hidden bg-gradient-to-br p-4 ${courseThemes[index % courseThemes.length]} ${
+          list ? "min-h-[132px] w-[125px] sm:w-[170px]" : "aspect-[16/6] w-full"
         }`}
-        style={{
-          backgroundImage: `linear-gradient(0deg, rgba(0,0,0,.15), rgba(0,0,0,0)), url("${coverUrl(index)}")`,
-          backgroundPosition: "center",
-          backgroundSize: "cover",
-        }}
-      />
+      >
+        <span className="absolute right-4 top-4 rounded-full border border-white/80 bg-white/80 px-2.5 py-1 text-[10px] font-medium text-slate-600 backdrop-blur">{course.term}</span>
+        <span className="flex h-10 w-10 items-center justify-center rounded-md border border-current/20 bg-white/70"><BookOpen className="h-5 w-5" /></span>
+        <span className="absolute bottom-4 right-4 text-[10px] font-semibold uppercase tracking-[.16em] opacity-70">{course.code}</span>
+      </Link>
       <div className={`flex min-w-0 flex-1 flex-col p-3.5 ${list ? "sm:p-4" : ""}`}>
         <Link href={`/courses/${course.id}`} className="min-w-0 flex-1">
-          <p className="text-[10px] font-medium tracking-wide text-[#555]">
-            {course.code}
-          </p>
           <h3 className="mt-1 line-clamp-2 text-[14px] font-semibold uppercase leading-[1.35] text-[#202020] group-hover:text-[#0b3ddb]">
             {course.title}
           </h3>
@@ -225,13 +221,41 @@ function CourseFormDialog({
   canCreate,
   requireInstructor,
   instructors,
+  periods,
+  sections,
   onClose,
 }: {
   canCreate: boolean;
   requireInstructor: boolean;
   instructors: InstructorOption[];
+  periods: PeriodOption[];
+  sections: SectionOption[];
   onClose: () => void;
 }) {
+  const [periodId, setPeriodId] = useState(periods[0]?.id ?? "");
+  const [sectionId, setSectionId] = useState("");
+  const selectedPeriod = periods.find((period) => period.id === periodId);
+  const availableSections = sections.filter((section) => !selectedPeriod || section.yearId === selectedPeriod.yearId);
+  const [availableStudents, setAvailableStudents] = useState<StudentOption[]>([]);
+  const [studentsLoading, setStudentsLoading] = useState(false);
+  const [studentsError, setStudentsError] = useState(false);
+  const studentRequest = useRef(0);
+  async function selectSection(nextSectionId: string) {
+    setSectionId(nextSectionId);
+    setAvailableStudents([]);
+    setStudentsError(false);
+    const requestId = ++studentRequest.current;
+    setStudentsLoading(Boolean(nextSectionId));
+    if (!nextSectionId) return;
+    try {
+      const result = await getSectionStudentsAction(nextSectionId);
+      if (requestId === studentRequest.current) setAvailableStudents(result);
+    } catch {
+      if (requestId === studentRequest.current) setStudentsError(true);
+    } finally {
+      if (requestId === studentRequest.current) setStudentsLoading(false);
+    }
+  }
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
@@ -244,12 +268,12 @@ function CourseFormDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="course-dialog-title"
-        className="w-full max-w-[440px] border border-[#d3d3d3] bg-white p-5 shadow-xl sm:p-6"
+        className="max-h-[92vh] w-full max-w-[760px] overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-2xl sm:p-7"
       >
         <div className="mb-5 flex items-center justify-between border-b border-[#e5e5e5] pb-3">
           <h2
             id="course-dialog-title"
-            className="font-serif text-xl text-[#222]"
+          className="text-xl font-semibold tracking-tight text-slate-950"
           >
             {canCreate ? "Crear curso" : "Unirme a un curso"}
           </h2>
@@ -263,79 +287,44 @@ function CourseFormDialog({
           </button>
         </div>
         {canCreate ? (
-          <form action={createCourseAction} className="space-y-3">
-            <label className="block text-xs font-medium text-slate-700">
-              Código
-              <input
-                name="code"
-                placeholder="CS-101"
-                maxLength={20}
-                required
-                className="mt-1.5 h-10 w-full border border-slate-300 px-3 text-sm focus:border-[#0b3ddb] focus:outline-none"
-              />
-            </label>
-            <label className="block text-xs font-medium text-slate-700">
-              Título
-              <input
-                name="title"
-                placeholder="Fundamentos de Programación"
-                maxLength={120}
-                required
-                className="mt-1.5 h-10 w-full border border-slate-300 px-3 text-sm focus:border-[#0b3ddb] focus:outline-none"
-              />
-            </label>
-            <label className="block text-xs font-medium text-slate-700">
-              Periodo
-              <input
-                name="term"
-                placeholder="202620"
-                maxLength={40}
-                required
-                className="mt-1.5 h-10 w-full border border-slate-300 px-3 text-sm focus:border-[#0b3ddb] focus:outline-none"
-              />
-            </label>
-            <label className="block text-xs font-medium text-slate-700">
-              Descripción
-              <textarea
-                name="description"
-                placeholder="Breve descripción del curso"
-                maxLength={1000}
-                rows={3}
-                className="mt-1.5 w-full resize-y border border-slate-300 px-3 py-2 text-sm focus:border-[#0b3ddb] focus:outline-none"
-              />
-            </label>
-            {requireInstructor ? (
-              instructors.length ? (
-                <label className="block text-xs font-medium text-slate-700">
-                  Docente
-                  <select
-                    name="instructorId"
-                    required
-                    defaultValue=""
-                    className="mt-1.5 h-10 w-full border border-slate-300 bg-white px-3 text-sm focus:border-[#0b3ddb] focus:outline-none"
-                  >
-                    <option value="" disabled>
-                      Selecciona un docente
-                    </option>
-                    {instructors.map((instructor) => (
-                      <option key={instructor.id} value={instructor.id}>
-                        {instructor.name}
-                      </option>
-                    ))}
+          <form action={createCourseAction} className="space-y-5">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="text-sm font-medium text-slate-700 sm:col-span-2">Asignatura o nombre del curso
+                <input name="title" placeholder="Matemática" maxLength={120} required className="mt-1.5 h-11 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-[#0b3ddb] focus:outline-none" />
+              </label>
+              {requireInstructor ? <>
+                <label className="text-sm font-medium text-slate-700">Periodo académico configurado
+                  <select name="academicPeriodId" value={periodId} onChange={(event) => { setPeriodId(event.target.value); void selectSection(""); }} required disabled={!periods.length} className="mt-1.5 h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-sm focus:border-[#0b3ddb] focus:outline-none disabled:bg-slate-100">
+                    <option value="" disabled>Selecciona un periodo</option>
+                    {periods.map((period) => <option key={period.id} value={period.id}>{period.yearName} · {period.name}</option>)}
                   </select>
                 </label>
-              ) : (
-                <p className="text-xs text-amber-700">
-                  No hay docentes activos. Crea o activa una cuenta de docente para poder asignarla al curso.
-                </p>
-              )
-            ) : null}
-            <button
-              type="submit"
-              className="mt-2 h-10 w-full bg-[#0b3ddb] text-sm font-medium text-white hover:bg-[#0932b5]"
-            >
-              Crear curso
-            </button>
+                <label className="text-sm font-medium text-slate-700">Grado y sección
+                  <select name="sectionId" value={sectionId} onChange={(event) => { void selectSection(event.target.value); }} required disabled={!availableSections.length} className="mt-1.5 h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-sm focus:border-[#0b3ddb] focus:outline-none disabled:bg-slate-100">
+                    <option value="" disabled>Selecciona el grupo</option>
+                    {availableSections.map((section) => <option key={section.id} value={section.id}>{section.level === "PRIMARY" ? "Primaria" : section.level === "SECONDARY" ? "Secundaria" : "Inicial"} · {section.gradeName} {section.name}</option>)}
+                  </select>
+                </label>
+                {instructors.length ? <label className="text-sm font-medium text-slate-700 sm:col-span-2">Docente responsable
+                  <select name="instructorId" required defaultValue="" className="mt-1.5 h-11 w-full rounded-md border border-slate-300 bg-white px-3 text-sm focus:border-[#0b3ddb] focus:outline-none">
+                    <option value="" disabled>Selecciona un docente activo</option>
+                    {instructors.map((instructor) => <option key={instructor.id} value={instructor.id}>{instructor.name}</option>)}
+                  </select>
+                </label> : <p className="text-sm text-amber-800 sm:col-span-2">No hay docentes activos. Crea o activa una cuenta desde Administración.</p>}
+              </> : <label className="text-sm font-medium text-slate-700">Periodo
+                <input name="term" placeholder="2026" maxLength={40} required className="mt-1.5 h-11 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-[#0b3ddb] focus:outline-none" />
+              </label>}
+              <label className="text-sm font-medium text-slate-700 sm:col-span-2">Descripción
+                <textarea name="description" placeholder="Objetivos y descripción del curso" maxLength={1000} rows={3} className="mt-1.5 w-full resize-y rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-[#0b3ddb] focus:outline-none" />
+              </label>
+            </div>
+            {requireInstructor && <section className="space-y-3 rounded-md border border-slate-200 bg-slate-50 p-4">
+              <div><h3 className="text-sm font-semibold text-slate-900">Estudiantes del curso</h3><p className="mt-1 text-xs text-slate-600">El código se genera automáticamente. Puedes matricular al grupo completo o elegir estudiantes.</p></div>
+              <label className="flex items-start gap-2.5 text-sm text-slate-700"><input type="checkbox" name="includeSectionStudents" value="true" defaultChecked className="mt-0.5 accent-[#0b3ddb]" /><span><span className="font-medium">Incluir a toda la sección seleccionada</span><span className="mt-0.5 block text-xs text-slate-500">Solo se agregan estudiantes activos asignados al mismo grado y sección.</span></span></label>
+              {sectionId && studentsLoading ? <p role="status" className="text-xs text-slate-500">Cargando estudiantes…</p> : studentsError ? <p role="alert" className="text-xs text-red-700">No se pudieron cargar los estudiantes. Vuelve a seleccionar la sección.</p> : sectionId && availableStudents.length ? <details className="rounded border border-slate-200 bg-white p-3"><summary className="cursor-pointer text-xs font-medium text-blue-800">Elegir estudiantes individualmente ({availableStudents.length})</summary><div className="mt-3 max-h-44 space-y-2 overflow-y-auto">{availableStudents.map((student) => <label key={student.id} className="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" name="studentIds" value={student.id} className="accent-[#0b3ddb]" /><span>{student.name}<span className="ml-1 text-slate-400">· {student.email}</span></span></label>)}</div></details> : <p className="text-xs text-slate-500">{sectionId ? "No hay estudiantes activos registrados en esta sección." : "Selecciona una sección para ver sus estudiantes."}</p>}
+            </section>}
+            {requireInstructor && !periods.length && <p role="alert" className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Configura un año abierto con periodos y secciones en Gestión académica antes de crear un curso.</p>}
+            <div className="flex items-center justify-between gap-3 border-t border-slate-200 pt-4"><p className="text-xs text-slate-500">Código único generado al guardar.</p><button type="submit" disabled={requireInstructor && (!instructors.length || !periods.length)} className="h-11 bg-[#0b3ddb] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#0932b5] disabled:cursor-not-allowed disabled:opacity-50">Crear curso</button></div>
           </form>
         ) : (
           <form action={enrollAction} className="space-y-3">
@@ -346,12 +335,12 @@ function CourseFormDialog({
                 placeholder="CS-101"
                 maxLength={20}
                 required
-                className="mt-1.5 h-10 w-full border border-slate-300 px-3 text-sm focus:border-[#0b3ddb] focus:outline-none"
+            className="mt-1.5 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-[#0b3ddb] focus:outline-none"
               />
             </label>
             <button
               type="submit"
-              className="h-10 w-full bg-[#0b3ddb] text-sm font-medium text-white hover:bg-[#0932b5]"
+              className="h-10 w-full rounded-md bg-[#0b3ddb] text-sm font-medium text-white hover:bg-[#0932b5]"
             >
               Unirme
             </button>
@@ -368,7 +357,10 @@ function CourseFormDialog({
 export function CoursesWorkspace({
   canCreate,
   requireInstructor,
+  initialCreate = false,
   instructors,
+  periods,
+  sections,
   courses,
 }: CourseWorkspaceProps) {
   const [query, setQuery] = useState("");
@@ -378,7 +370,7 @@ export function CoursesWorkspace({
   const [pageSize] = useState(100);
   const [page, setPage] = useState(0);
   const [favorites, setFavorites] = useState<string[]>([]);
-  const [formOpen, setFormOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(initialCreate);
 
   const terms = useMemo(
     () => Array.from(new Set(courses.map((course) => course.term))),
@@ -551,6 +543,8 @@ export function CoursesWorkspace({
           canCreate={canCreate}
           requireInstructor={requireInstructor}
           instructors={instructors}
+          periods={periods}
+          sections={sections}
           onClose={() => setFormOpen(false)}
         />
       ) : null}

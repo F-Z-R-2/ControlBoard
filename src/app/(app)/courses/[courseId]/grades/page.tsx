@@ -177,15 +177,15 @@ export default async function GradesPage({
 
       <Card>
         <CardContent className="pt-5">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
-                  <th className="pb-3 pr-4 font-medium">Estudiante</th>
+          <div className="overflow-x-auto rounded-md border border-slate-200">
+            <table className="w-full min-w-[700px] border-collapse text-sm">
+              <thead className="sticky top-0 bg-slate-50">
+                <tr className="border-b border-slate-200 text-left text-[11px] uppercase tracking-wider text-slate-500">
+                  <th className="px-4 py-3 font-semibold">Estudiante</th>
                   {assignments.map((assignment) => (
                     <th
                       key={assignment.id}
-                      className="pb-3 pr-4 font-medium"
+                      className="max-w-36 px-3 py-3 font-semibold"
                       title={`${assignment.title} (${assignment.points} pts)`}
                     >
                       {assignment.title.length > 18
@@ -193,7 +193,7 @@ export default async function GradesPage({
                         : assignment.title}
                     </th>
                   ))}
-                  <th className="pb-3 font-medium">Total</th>
+                  <th className="sticky right-0 bg-slate-50 px-4 py-3 font-semibold">Total</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -206,8 +206,8 @@ export default async function GradesPage({
                   );
 
                   return (
-                    <tr key={enrollment.id}>
-                      <td className="py-3 pr-4">
+                    <tr key={enrollment.id} className="group transition-colors hover:bg-blue-50/40">
+                      <td className="sticky left-0 border-r border-slate-100 bg-white px-4 py-3 group-hover:bg-blue-50/40">
                         <p className="font-medium text-slate-900">
                           {enrollment.user.name}
                         </p>
@@ -220,7 +220,7 @@ export default async function GradesPage({
                         return (
                           <td
                             key={assignment.id}
-                            className="py-3 pr-4 text-slate-600"
+                            className="border-r border-slate-50 px-3 py-3 text-center tabular-nums text-slate-700"
                           >
                             {grade === null || grade === undefined ? (
                               <span className="text-slate-300">—</span>
@@ -230,7 +230,7 @@ export default async function GradesPage({
                           </td>
                         );
                       })}
-                      <td className="py-3">
+                      <td className="sticky right-0 border-l border-slate-100 bg-white px-4 py-3">
                         <Badge variant="slate">
                           {earned}/{possible} (
                           {possible > 0

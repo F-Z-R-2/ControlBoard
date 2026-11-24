@@ -1,77 +1,55 @@
 import { isAdmin as isAdministrator } from "@/lib/roles";
 import { endOfDay, format, startOfDay, subDays } from "date-fns";
 import { es } from "date-fns/locale";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { AppShell } from "@/components/app-shell";
-import type { PendingTaskGroup } from "@/components/pending-tasks";
+import { PendingTasks } from "@/components/pending-tasks";
 import { db } from "@/lib/db";
-import type { Assignment, Course, Submission } from "@/lib/db-types";
+import type { Assignment, Course } from "@/lib/db-types";
 import { requireUser } from "@/lib/permissions";
 
 type AssignmentTask = Assignment & {
   course: Pick<Course, "id" | "code" | "title">;
-  submissions: Pick<Submission, "id" | "studentId" | "grade">[];
+  hasOwnSubmission: boolean;
+  ungradedCount: number;
 };
 
-export default async function AppLayout({ children }: { children: ReactNode }) {
-  const user = await requireUser();
-
-  const courses = isAdministrator(user.role)
-    ? await db.sql<{ id: string }>`SELECT "id" FROM "Course"`
-    : await db.sql<{ id: string }>`
-        SELECT c."id" FROM "Course" c
-        WHERE c."instructorId" = ${user.id} OR EXISTS (
-          SELECT 1 FROM "Enrollment" e
-          WHERE e."courseId" = c."id" AND e."userId" = ${user.id}
-        )
-      `;
-
-  const courseIds = courses.map((course) => course.id);
+async function loadPendingTasks(user: { id: string; role: string }) {
   const now = new Date();
   const todayStart = startOfDay(now);
   const todayEnd = endOfDay(now);
   const horizon = new Date(todayStart.getTime() + 14 * 24 * 60 * 60 * 1000);
   const lookback = subDays(todayStart, 7);
 
-  const placeholders = courseIds.map((_, index) => `$${index + 1}`).join(", ");
-  const params: unknown[] = [...courseIds];
-  let submissionFilter = `s."grade" IS NULL`;
-  if (user.role === "STUDENT") {
-    params.push(user.id);
-    submissionFilter = `s."studentId" = $${params.length}`;
-  }
-  params.push(lookback);
-  const lookbackParam = `$${params.length}`;
-  params.push(horizon);
-  const horizonParam = `$${params.length}`;
-
-  const assignments: AssignmentTask[] = courseIds.length
-    ? await db.query<AssignmentTask>(
-        `SELECT a.*,
-           jsonb_build_object('id', c."id", 'code', c."code", 'title', c."title") AS "course",
-           COALESCE((
-             SELECT jsonb_agg(jsonb_build_object('id', s."id", 'studentId', s."studentId", 'grade', s."grade"))
-             FROM "Submission" s
-             WHERE s."assignmentId" = a."id" AND ${submissionFilter}
-           ), '[]'::jsonb) AS "submissions"
-         FROM "Assignment" a
-         JOIN "Course" c ON c."id" = a."courseId"
-         WHERE a."courseId" IN (${placeholders})
-           AND a."dueAt" >= ${lookbackParam} AND a."dueAt" <= ${horizonParam}
-         ORDER BY a."dueAt" ASC`,
-        params,
-      )
-    : [];
+  const assignments = await db.query<AssignmentTask>(
+    `SELECT a.*,
+       jsonb_build_object('id', c."id", 'code', c."code", 'title', c."title") AS "course",
+       EXISTS (
+         SELECT 1 FROM "Submission" own
+         WHERE own."assignmentId" = a."id" AND own."studentId" = $2
+       ) AS "hasOwnSubmission",
+       (SELECT COUNT(*)::int FROM "Submission" pending
+         WHERE pending."assignmentId" = a."id" AND pending."grade" IS NULL
+       ) AS "ungradedCount"
+     FROM "Assignment" a
+     JOIN "Course" c ON c."id" = a."courseId"
+     WHERE ($1::boolean OR c."instructorId" = $2 OR EXISTS (
+       SELECT 1 FROM "Enrollment" e WHERE e."courseId" = c."id" AND e."userId" = $2
+     ))
+       AND a."dueAt" >= $3 AND a."dueAt" <= $4
+     ORDER BY a."dueAt" ASC`,
+    [isAdministrator(user.role), user.id, lookback, horizon],
+  );
 
   const pending = assignments.filter(
     (assignment) =>
       assignment.dueAt &&
-      (user.role !== "STUDENT" || assignment.submissions.length === 0),
+      (user.role !== "STUDENT" || !assignment.hasOwnSubmission),
   );
 
   function toItem(assignment: (typeof pending)[number]) {
     const dueAt = assignment.dueAt as Date;
-    const ungraded = assignment.submissions.length;
+    const ungraded = assignment.ungradedCount;
     return {
       id: assignment.id,
       title: assignment.title,
@@ -106,7 +84,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     .filter((assignment) => assignment.dueAt && assignment.dueAt > todayEnd)
     .map(toItem);
 
-  const taskGroups: PendingTaskGroup[] = [
+  return [
     {
       name: "Vencida",
       emptyMessage: "No hay elementos vencidos en los últimos 7 días",
@@ -123,6 +101,20 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       items: dueSoon,
     },
   ];
+}
+
+async function PendingTasksContent({ groups }: { groups: ReturnType<typeof loadPendingTasks> }) {
+  return <PendingTasks groups={await groups} />;
+}
+
+function PendingTasksLoading() {
+  return <div className="flex-1 animate-pulse space-y-4 p-5" aria-label="Cargando tareas pendientes"><div className="h-5 w-40 rounded bg-slate-200" /><div className="h-20 rounded border bg-slate-50" /><div className="h-20 rounded border bg-slate-50" /></div>;
+}
+
+export default async function AppLayout({ children }: { children: ReactNode }) {
+  const user = await requireUser();
+  const taskGroups = loadPendingTasks({ id: user.id, role: user.role });
+  const taskPanel = <Suspense fallback={<PendingTasksLoading />}><PendingTasksContent groups={taskGroups} /></Suspense>;
 
   return (
     <AppShell
@@ -133,7 +125,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         image: user.image,
         role: user.role,
       }}
-      tasks={taskGroups}
+      taskPanel={taskPanel}
     >
       {children}
     </AppShell>

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { psychologyAction } from "@/app/actions/psychology";
+import { ClientGetForm } from "@/components/client-get-form";
 import { ManagementSubmit } from "@/components/management-submit";
 import { PageHeader } from "@/components/page-header";
 import { Input } from "@/components/ui/input";
@@ -76,7 +77,7 @@ export default async function PsychologyPage({ searchParams }: {
       {search.success && <p role="status" className="border border-green-200 bg-green-50 p-3 text-sm text-green-800">{search.success}</p>}
       <section className="space-y-4 border bg-white p-5">
         <h2 className="text-lg font-semibold">Fichas ({count})</h2>
-        <form action="/psychology" className="flex gap-3"><Input name="q" defaultValue={q} placeholder="Buscar estudiante" aria-label="Buscar estudiante" maxLength={120} /><Button type="submit" variant="outline">Buscar</Button></form>
+        <ClientGetForm action="/psychology" className="flex gap-3"><Input name="q" defaultValue={q} placeholder="Buscar estudiante" aria-label="Buscar estudiante" maxLength={120} /><Button type="submit" variant="outline">Buscar</Button></ClientGetForm>
         {!cases.length ? <p className="text-sm text-slate-500">No hay fichas para mostrar.</p> : <div className="overflow-x-auto"><table className="w-full text-left text-sm">
           <thead><tr className="border-b"><th className="p-2">Estudiante</th><th className="p-2">Derivación</th><th className="p-2">Profesional</th><th className="p-2">Estado</th><th className="p-2">Ficha</th></tr></thead>
           <tbody>{cases.map(record => <tr key={record.id} className="border-b"><td className="p-2">{record.student.name}</td><td className="p-2">{psychologyCategories[record.category]}</td><td className="p-2">{record.psychologist.name}</td><td className="p-2">{psychologyStatuses[record.status]}</td><td className="p-2"><Link href={`/psychology/${record.id}`} className="text-blue-700 underline">Abrir</Link></td></tr>)}</tbody>

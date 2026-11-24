@@ -71,10 +71,10 @@ export default async function AnnouncementsPage({
             </Card>
           ) : (
             announcements.map((announcement) => (
-              <Card key={announcement.id}>
+              <Card key={announcement.id} className="overflow-hidden border-l-4 border-l-blue-800 transition-shadow hover:shadow-sm">
                 <CardHeader className="flex flex-row items-start justify-between gap-3">
                   <div>
-                    <CardTitle>{announcement.title}</CardTitle>
+                    <CardTitle className="text-[17px] leading-6">{announcement.title}</CardTitle>
                     <CardDescription>
                       {announcement.author.name} ·{" "}
                       {formatDateTime(announcement.createdAt)}
