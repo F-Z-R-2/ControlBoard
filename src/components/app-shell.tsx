@@ -147,7 +147,7 @@ function Sidebar({
             </button>
           </form>
           <p className="mt-3 text-[10px] leading-4 text-slate-500">
-            ControlBoard · Campus virtual de demostración
+            ControlBoard · Campus virtual institucional
           </p>
         </div>
       </aside>

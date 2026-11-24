@@ -46,31 +46,21 @@ ss
 npm install
 ```
 
-Crea `.env` a partir de `.env.example` y copia la cadena **pooled** de tu proyecto Neon en `DATABASE_URL`. Para una base vacía, aplica el esquema y los datos demo:
+Crea `.env` a partir de `.env.example` y copia la cadena **pooled** de tu proyecto Neon en `DATABASE_URL`. Para iniciar una instalación vacía, aplica el esquema y crea únicamente la cuenta de superadministración:
 
 ```bash
 npm run db:schema
-npm run db:seed
+npm run admin:bootstrap
 npm run dev
 ```
+
+Antes de crear la cuenta, configura `BOOTSTRAP_EMAIL`, `BOOTSTRAP_NAME` y `BOOTSTRAP_PASSWORD` en `.env`. La aplicación no carga cursos, tareas, estudiantes ni cuentas de demostración automáticamente.
 
 Si la base ya existe con el esquema anterior, no vuelvas a aplicar `db:schema`: la migración solo cambió la capa de acceso a datos, no las tablas.
 
 Abre `http://localhost:3000`.
 
-### Credenciales demo
-
-| Rol | Correo | Contraseña |
-| --- | --- | --- |
-| Superadministrador | `superadmin@controlboard.dev` | `SuperAdmin123!` |
-| Secretaría | `secretaria@controlboard.dev` | `Secretaria123!` |
-| Psicología | `psicologia@controlboard.dev` | `Psicologia123!` |
-| Administrador | `admin@controlboard.dev` | `Admin123!` |
-| Docente | `instructor@controlboard.dev` | `Profe123!` |
-| Estudiante | `estudiante@controlboard.dev` | `Estudiante123!` |
-| Estudiante | `ana@controlboard.dev` | `Estudiante123!` |
-
-Los cursos de ejemplo corresponden a 1° Medio A: Matemática, Lengua y Literatura, Ciencias Naturales, Historia, Inglés, Tecnología, Artes Visuales y Educación Física.
+La cuenta inicial es la que configures mediante `BOOTSTRAP_EMAIL`, `BOOTSTRAP_NAME` y `BOOTSTRAP_PASSWORD`.
 
 ## Variables de entorno
 
@@ -106,7 +96,7 @@ npm run start        # producción
 npm run lint         # ESLint
 npm run typecheck    # TypeScript
 npm run db:schema    # aplica db/schema.sql (base vacía)
-npm run db:seed      # datos demo
+npm run db:seed      # datos demo (requiere ENABLE_DEMO_SEED=true)
 ```
 
 ## Estructura
@@ -114,7 +104,7 @@ npm run db:seed      # datos demo
 ```text
 db/
   schema.sql           Esquema completo para Neon
-  seed.ts              Datos demo
+  seed.ts              Datos demo opcionales, desactivados por defecto
 src/
   app/
     (app)/             Zona autenticada: panel, cursos y sus tabs
@@ -135,7 +125,7 @@ src/
 4. Para grabaciones, configura un bucket S3 y las variables `LIVEKIT_S3_*`. El usuario de S3 necesita permisos de escritura sobre el bucket.
 5. Importa el repositorio en Vercel y define las variables de entorno.
 6. Si la base está vacía, aplica el esquema con `npm run db:schema`.
-7. Opcional: ejecuta `npm run db:seed` solo en entornos de demostración.
+7. Crea la cuenta inicial con `npm run admin:bootstrap`. Para cargar datos demo de forma intencional, define `ENABLE_DEMO_SEED=true` y ejecuta `npm run db:seed` solo en una base de demostración.
 8. Despliega. El script de build es directamente `next build`.
 
 ## Notas y límites actuales
@@ -146,7 +136,7 @@ src/
 - El registro público crea únicamente estudiantes; las cuentas de personal se crean desde Administración.
 - No hay notificaciones por correo ni foros. El calendario lista entregas y sesiones.
 - No hay rate limiting en login ni en las rutas API.
-- Las contraseñas demo del seed no deben usarse en producción.
+- El seed demo está protegido por `ENABLE_DEMO_SEED=true` y no debe ejecutarse en producción.
 # sitema-manuel-scorza-demo
 
 ## Secretaría y administración
@@ -155,7 +145,7 @@ El menú muestra `/administration` solo al personal autorizado. Secretaría gest
 
 Las páginas, acciones y API de LiveKit consultan el estado y rol actuales en la base de datos: desactivar una cuenta bloquea sus siguientes solicitudes, incluso con una sesión JWT existente. Los tokens LiveKit ya emitidos conservan su vigencia hasta expirar; no se expulsa automáticamente a participantes ya conectados.
 
-Las instalaciones existentes conservan su esquema; no hay cambios de DDL en esta migración. Para instalaciones nuevas, `npm run db:schema` crea el esquema completo. `npm run db:seed` incluye las cuentas demo de Secretaría y Superadministración; úsalo solo en una base de demostración, porque también actualiza cursos y cuentas demo existentes.
+Las instalaciones existentes conservan su esquema. Para instalaciones nuevas, `npm run db:schema` crea el esquema completo y `npm run admin:bootstrap` crea la cuenta inicial sin insertar datos demo. El seed demo requiere `ENABLE_DEMO_SEED=true` y actualiza registros demo existentes.
 
 Para crear el primer superadministrador sin cargar datos de demostración, establece `BOOTSTRAP_EMAIL`, `BOOTSTRAP_NAME` y `BOOTSTRAP_PASSWORD` en el entorno y ejecuta `npm run admin:bootstrap`. El comando solo crea una cuenta nueva y se niega a ejecutarse si ya existe un superadministrador activo o el correo está ocupado.
 
