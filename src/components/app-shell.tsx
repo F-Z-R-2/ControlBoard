@@ -10,6 +10,7 @@ import {
   MessageSquare,
   GraduationCap,
   Settings,
+  WalletCards,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -58,6 +59,9 @@ function Sidebar({
   pathname: string;
 }) {
   const name = user.name ?? "Usuario";
+  const primaryNavigation = user.role === "SECRETARY"
+    ? [{ label: "Panel de Secretaría", icon: Building, href: "/secretariat" }, ...navigation.slice(1)]
+    : navigation;
 
   return (
     <>
@@ -109,7 +113,7 @@ function Sidebar({
           aria-label="Navegación principal"
           className="mt-3 flex-1 space-y-0.5 overflow-y-auto px-2"
         >
-          {[...navigation, ...(canAccessPsychology(user.role) ? [{ label: "Psicología", icon: MessageSquare, href: "/psychology" }] : []), ...(isStaff(user.role) ? [{ label: "Estudiantes", icon: GraduationCap, href: "/students" }, { label: "Escalas de notas", icon: ClipboardList, href: "/grading-settings" }, { label: "Gestión académica", icon: BookOpen, href: "/academics" }, { label: user.role === "SECRETARY" ? "Secretaría" : "Administración", icon: Settings, href: "/administration" }] : [])].map(({ href, icon: Icon, label }) => {
+          {[...primaryNavigation, ...(canAccessPsychology(user.role) ? [{ label: "Psicología", icon: MessageSquare, href: "/psychology" }] : []), ...(isStaff(user.role) ? [{ label: "Estudiantes", icon: GraduationCap, href: "/students" }, { label: "Escalas de notas", icon: ClipboardList, href: "/grading-settings" }, { label: "Gestión académica", icon: BookOpen, href: "/academics" }, { label: user.role === "SECRETARY" ? "Secretaría" : "Administración", icon: Settings, href: "/administration" }, { label: "Caja y pagos", icon: WalletCards, href: "/payments" }] : [])].map(({ href, icon: Icon, label }) => {
             const active = isActive(pathname, href);
             return (
               <Link

@@ -154,6 +154,7 @@ async function AdminDashboard({ name }: { name: string }) {
 export default async function DashboardPage() {
   const user = await requireUser();
   if (user.role === "PSYCHOLOGIST") redirect("/psychology");
+  if (user.role === "SECRETARY") redirect("/secretariat");
   const isAdmin = isAdministrator(user.role);
   if (isAdmin) return <AdminDashboard name={user.name ?? "Administración"} />;
   const isStudent = user.role === "STUDENT";

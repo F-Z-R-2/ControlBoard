@@ -30,6 +30,7 @@ ss
   - Pizarra Excalidraw sincronizada por data channels.
   - Grabación con LiveKit Egress hacia S3.
 - Autorización por curso en páginas, acciones y rutas API.
+- Caja y pagos para Secretaría: registro de ingresos, recibo imprimible con numeración correlativa y Excel mensual.
 
 ## Requisitos
 
@@ -50,9 +51,12 @@ Crea `.env` a partir de `.env.example` y copia la cadena **pooled** de tu proyec
 
 ```bash
 npm run db:schema
+npm run db:migrate
 npm run admin:bootstrap
 npm run dev
 ```
+
+En una base que ya estaba creada, ejecuta `npm run db:migrate` para añadir las tablas de captación de ingresos. En **Caja y pagos**, configura el próximo número de recibo antes del primer registro; después la numeración avanza automáticamente. El filtro por mes descarga el Excel con las columnas `FECHA`, `RN N°`, `CANTIDAD`, `CERT`, `TRA`, `CV`, `CM`, `AUT`, `AGEN`, `BOL`, `FUT`, `RR`, `REP` y `TOTAL`.
 
 Antes de crear la cuenta, configura `BOOTSTRAP_EMAIL`, `BOOTSTRAP_NAME` y `BOOTSTRAP_PASSWORD` en `.env`. La aplicación no carga cursos, tareas, estudiantes ni cuentas de demostración automáticamente.
 
@@ -61,6 +65,24 @@ Si la base ya existe con el esquema anterior, no vuelvas a aplicar `db:schema`: 
 Abre `http://localhost:3000`.
 
 La cuenta inicial es la que configures mediante `BOOTSTRAP_EMAIL`, `BOOTSTRAP_NAME` y `BOOTSTRAP_PASSWORD`.
+
+### Cuentas de demostración
+
+Estas cuentas solo existen después de cargar los datos de demostración en una base de pruebas. No las uses en producción ni con información real.
+
+| Perfil | Correo | Contraseña |
+| --- | --- | --- |
+| Superadministrador | `superadmin@controlboard.dev` | `SuperAdmin123!` |
+| Secretaría | `secretaria@controlboard.dev` | `Secretaria123!` |
+| Psicología | `psicologia@controlboard.dev` | `Psicologia123!` |
+| Administrador | `admin@controlboard.dev` | `Admin123!` |
+| Docente | `instructor@controlboard.dev` | `Profe123!` |
+| Estudiante | `estudiante@controlboard.dev` | `Estudiante123!` |
+| Estudiante | `ana@controlboard.dev` | `Estudiante123!` |
+
+Los cursos de muestra corresponden a 1.º Medio A: Matemática, Lengua y Literatura, Ciencias Naturales, Historia, Inglés, Tecnología, Artes Visuales y Educación Física.
+
+Para mostrar en `/login` los botones de acceso rápido, define `ENABLE_DEMO_LOGIN=true`. El inicio de sesión sigue validando cada cuenta con Auth.js; los accesos usan únicamente estas cuentas de demostración. La opción está desactivada por defecto y solo debe activarse en una instalación de demostración con datos ficticios. Para crear las cuentas y cursos, define también `ENABLE_DEMO_SEED=true` y ejecuta `npm run db:seed` en esa base de prueba.
 
 ## Variables de entorno
 
