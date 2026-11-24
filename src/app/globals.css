@@ -35,3 +35,24 @@ body {
   --color-primary-darker: #0932b5;
   --color-primary-darkest: #08298f;
 }
+
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 3mm;
+  }
+
+  html,
+  body {
+    width: 80mm;
+    min-width: 0;
+    margin: 0 !important;
+    background: #fff !important;
+  }
+
+  .thermal-ticket {
+    width: 74mm !important;
+    max-width: none !important;
+    margin: 0 auto !important;
+  }
+}

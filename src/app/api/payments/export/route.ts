@@ -79,17 +79,24 @@ export async function GET(request: Request) {
 
   const categoryCounts = new Map<string, number>(reportColumns.map((code) => [code, 0]));
   let totalAmountCents = 0;
+  let totalConceptCount = 0;
   for (const [index, receipt] of receipts.entries()) {
     const parsedLines = typeof receipt.lines === "string" ? JSON.parse(receipt.lines) as { reportCode: string }[] : receipt.lines;
-    const present = new Set<string>(parsedLines.map((line) => line.reportCode).filter((code) => reportColumns.includes(code as (typeof reportColumns)[number])));
+    const countsForReceipt = new Map<string, number>();
+    for (const line of parsedLines) {
+      if (reportColumns.includes(line.reportCode as (typeof reportColumns)[number])) {
+        countsForReceipt.set(line.reportCode, (countsForReceipt.get(line.reportCode) ?? 0) + 1);
+        categoryCounts.set(line.reportCode, (categoryCounts.get(line.reportCode) ?? 0) + 1);
+      }
+    }
     const amountCents = Math.round(Number(receipt.totalAmount) * 100);
     const amount = amountCents / 100;
     totalAmountCents += amountCents;
-    for (const code of present) categoryCounts.set(code, (categoryCounts.get(code) ?? 0) + 1);
+    totalConceptCount += parsedLines.length;
     const rowNumber = index + 4;
     const row = sheet.getRow(rowNumber);
     row.values = [new Date(`${receipt.issuedOn}T12:00:00Z`), String(receipt.receiptNumber).padStart(6, "0"), amount,
-      ...reportColumns.map((code) => present.has(code) ? "X" : ""), present.size];
+      ...reportColumns.map((code) => "X".repeat(countsForReceipt.get(code) ?? 0)), parsedLines.length];
     row.height = 22;
     row.font = { name: "Arial", size: 10, color: { argb: "FF202020" } };
     row.alignment = { vertical: "middle", horizontal: "center" };
@@ -107,10 +114,7 @@ export async function GET(request: Request) {
 
   const totalRowNumber = Math.max(4, receipts.length + 4);
   const totalRow = sheet.getRow(totalRowNumber);
-  totalRow.values = ["TOTAL", "", totalAmountCents / 100, ...reportColumns.map((code) => categoryCounts.get(code) ?? 0), receipts.reduce((count, receipt) => {
-    const parsedLines = typeof receipt.lines === "string" ? JSON.parse(receipt.lines) as { reportCode: string }[] : receipt.lines;
-    return count + new Set(parsedLines.map((line) => line.reportCode).filter((code) => reportColumns.includes(code as (typeof reportColumns)[number]))).size;
-  }, 0)];
+  totalRow.values = ["TOTAL", "", totalAmountCents / 100, ...reportColumns.map((code) => categoryCounts.get(code) ?? 0), totalConceptCount];
   totalRow.height = 24;
   totalRow.font = { name: "Arial", size: 10, bold: true, color: { argb: "FF263648" } };
   totalRow.alignment = { horizontal: "center", vertical: "middle" };
