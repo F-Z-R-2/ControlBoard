@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { signIn, signOut } from "@/auth";
 import { db, isUniqueViolation, newId } from "@/lib/db";
+import { isDemoLoginEnabled } from "@/lib/demo-auth";
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -45,6 +46,40 @@ export async function loginAction(formData: FormData) {
         fail("/login", "Correo o contraseña incorrectos");
       }
       fail("/login", "No se pudo iniciar sesión");
+    }
+    throw error;
+  }
+}
+
+const demoAccounts = {
+  student: { email: "estudiante@controlboard.dev", password: "Estudiante123!", redirectTo: "/dashboard" },
+  instructor: { email: "instructor@controlboard.dev", password: "Profe123!", redirectTo: "/dashboard" },
+  secretary: { email: "secretaria@controlboard.dev", password: "Secretaria123!", redirectTo: "/secretariat" },
+  psychologist: { email: "psicologia@controlboard.dev", password: "Psicologia123!", redirectTo: "/psychology" },
+  admin: { email: "admin@controlboard.dev", password: "Admin123!", redirectTo: "/dashboard" },
+  superAdmin: { email: "superadmin@controlboard.dev", password: "SuperAdmin123!", redirectTo: "/dashboard" },
+} as const;
+
+export async function demoLoginAction(profile: string, _formData: FormData) {
+  void _formData;
+  if (!isDemoLoginEnabled) {
+    fail("/login", "El acceso de demostración está desactivado");
+  }
+
+  if (!Object.hasOwn(demoAccounts, profile)) {
+    fail("/login", "Perfil de demostración inválido");
+  }
+
+  const account = demoAccounts[profile as keyof typeof demoAccounts];
+  try {
+    await signIn("credentials", {
+      email: account.email,
+      password: account.password,
+      redirectTo: account.redirectTo,
+    });
+  } catch (error) {
+    if (error instanceof AuthError) {
+      fail("/login", "La cuenta de demostración no está disponible. Activa la carga demo en una base de pruebas.");
     }
     throw error;
   }

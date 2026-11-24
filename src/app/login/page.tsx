@@ -4,6 +4,7 @@ import Link from "next/link";
 import { MapPin, ShieldCheck } from "lucide-react";
 
 import { LoginForm } from "@/components/login-form";
+import { isDemoLoginEnabled } from "@/lib/demo-auth";
 
 export const metadata: Metadata = {
   title: "Iniciar sesión · I. E. 40122 Manuel Scorza",
@@ -102,7 +103,7 @@ export default async function LoginPage({
               </div>
             ) : null}
 
-            <LoginForm />
+            <LoginForm showDemoProfiles={isDemoLoginEnabled} />
 
             <p className="mt-6 text-sm text-white/65">
               ¿Aún no tienes cuenta?{" "}

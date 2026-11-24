@@ -18,7 +18,7 @@ export function AuthShell({
       <div className="relative hidden overflow-hidden bg-slate-900 p-12 text-white lg:flex lg:flex-col lg:justify-between">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_#4338ca_0,_transparent_55%),radial-gradient(circle_at_bottom_left,_#1e293b_0,_transparent_50%)]" />
         <div className="relative">
-          <Link href="/login" className="flex items-center gap-2">
+          <Link href="/" className="flex items-center gap-2">
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500 text-white">
               <GraduationCap className="h-5 w-5" />
             </span>
@@ -54,7 +54,7 @@ export function AuthShell({
       <div className="flex flex-1 items-center justify-center px-4 py-12 sm:px-8">
         <div className="w-full max-w-sm">
           <Link
-            href="/login"
+            href="/"
             className="mb-8 flex items-center gap-2 lg:hidden"
           >
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-white">
