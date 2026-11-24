@@ -17,6 +17,75 @@ import { isStaff } from "@/lib/roles";
 
 class AcademicError extends Error {}
 
+export async function generateSchoolStructureAction(formData: FormData) {
+  const current = await requireStaff();
+  const yearId = String(formData.get("yearId") ?? "").trim();
+  if (!yearId) redirect("/academics?error=Selecciona+un+a%C3%B1o+lectivo");
+
+  try {
+    await withTransaction(async tx => {
+      const actors = await tx.sql<User>`SELECT * FROM "User" WHERE "id" = ${current.id} LIMIT 1`;
+      if (!actors[0]?.isActive || !isStaff(actors[0].role)) {
+        throw new AcademicError("No tienes permiso para configurar la estructura académica");
+      }
+      const years = await tx.sql<AcademicYear>`SELECT * FROM "AcademicYear" WHERE "id" = ${yearId} LIMIT 1`;
+      const year = years[0];
+      if (!year || year.isClosed) throw new AcademicError("Selecciona un año lectivo abierto");
+
+      const gradeIds = new Map<string, string>();
+      const grades = [
+        ...Array.from({ length: 6 }, (_, index) => ({ level: "PRIMARY", name: String(index + 1), position: index + 1 })),
+        ...Array.from({ length: 5 }, (_, index) => ({ level: "SECONDARY", name: String(index + 1), position: index + 1 })),
+      ];
+      for (const grade of grades) {
+        const existingGrades = await tx.query<{ id: string; name: string }>(
+          `SELECT "id", "name" FROM "SchoolGrade" WHERE "level" = $1 ORDER BY "position", "name"`,
+          [grade.level],
+        );
+        const existing = existingGrades.find(row => Number.parseInt(row.name, 10) === grade.position);
+        if (existing) {
+          await tx.query(`UPDATE "SchoolGrade" SET "position" = $1 WHERE "id" = $2`, [grade.position, existing.id]);
+          gradeIds.set(`${grade.level}:${grade.name}`, existing.id);
+        } else {
+          const rows = await tx.query<{ id: string }>(
+            `INSERT INTO "SchoolGrade" ("id", "level", "name", "position")
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT ("level", "name") DO UPDATE SET "position" = EXCLUDED."position"
+             RETURNING "id"`,
+            [newId(), grade.level, grade.name, grade.position],
+          );
+          gradeIds.set(`${grade.level}:${grade.name}`, rows[0]!.id);
+        }
+      }
+
+      for (const grade of grades) {
+        const gradeId = gradeIds.get(`${grade.level}:${grade.name}`)!;
+        for (const sectionName of ["A", "B"] as const) {
+          await tx.sql`
+            INSERT INTO "SchoolSection" ("id", "name", "yearId", "gradeId")
+            VALUES (${newId()}, ${sectionName}, ${year.id}, ${gradeId})
+            ON CONFLICT ("yearId", "gradeId", "name") DO NOTHING
+          `;
+        }
+      }
+    }, { isolationLevel: "serializable" });
+  } catch (error) {
+    if (error instanceof AcademicError) {
+      redirect(`/academics?year=${encodeURIComponent(yearId)}&error=${encodeURIComponent(error.message)}`);
+    }
+    if (isUniqueViolation(error)) {
+      redirect(`/academics?year=${encodeURIComponent(yearId)}&error=${encodeURIComponent("Otra persona configuró este año. Actualiza la página.")}`);
+    }
+    if (isSerializationFailure(error)) {
+      redirect(`/academics?year=${encodeURIComponent(yearId)}&error=${encodeURIComponent("La estructura cambió mientras se guardaba. Vuelve a intentarlo.")}`);
+    }
+    throw error;
+  }
+
+  revalidatePath("/", "layout");
+  redirect(`/academics?year=${encodeURIComponent(yearId)}&success=${encodeURIComponent("Estructura lista: 6 grados de Primaria, 5 de Secundaria y secciones A/B")}`);
+}
+
 export async function saveAcademicAction(formData: FormData) {
   const current = await requireStaff();
   const values = Object.fromEntries(formData);

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { UserPlus } from "lucide-react";
 import Link from "next/link";
 import { saveUserAction, manageEnrollmentAction } from "@/app/actions/administration";
+import { ClientGetForm } from "@/components/client-get-form";
 import { ManagementSubmit } from "@/components/management-submit";
 import { PageHeader } from "@/components/page-header";
 import { Input } from "@/components/ui/input";
@@ -16,19 +18,19 @@ export const metadata: Metadata = { title: "Administración" };
 
 type EditableUser = { id: string; name: string; email: string; role: Role; isActive: boolean };
 
-function UserForm({ roles, user }: { roles: Role[]; user?: EditableUser }) {
+function UserForm({ roles, user, defaultRole }: { roles: Role[]; user?: EditableUser; defaultRole?: Role }) {
   return <form action={saveUserAction} className="grid gap-4 sm:grid-cols-2">
     {user && <input type="hidden" name="id" value={user.id} />}
     <label className="text-sm">Nombre completo<Input name="name" defaultValue={user?.name} required minLength={2} maxLength={120} autoComplete="name" /></label>
     <label className="text-sm">Correo<Input name="email" type="email" defaultValue={user?.email} required autoComplete="email" /></label>
-    <label className="text-sm">Rol<Select name="role" defaultValue={user?.role ?? roles[0]}>{roles.map(role => <option key={role} value={role}>{roleLabel(role)}</option>)}</Select></label>
+    <label className="text-sm">Rol<Select name="role" defaultValue={user?.role ?? defaultRole ?? roles[0]}>{roles.map(role => <option key={role} value={role}>{roleLabel(role)}</option>)}</Select></label>
     <label className="text-sm">Estado<Select name="isActive" defaultValue={String(user?.isActive ?? true)}><option value="true">Activo</option><option value="false">Inactivo</option></Select></label>
     <label className="text-sm sm:col-span-2">{user ? "Nueva contraseña (dejar vacía para conservarla)" : "Contraseña inicial"}<Input name="password" type="password" minLength={8} maxLength={72} required={!user} autoComplete="new-password" /></label>
     <div className="sm:col-span-2"><ManagementSubmit>{user ? "Guardar cambios" : "Crear cuenta"}</ManagementSubmit></div>
   </form>;
 }
 
-export default async function AdministrationPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; edit?: string; error?: string; success?: string }> }) {
+export default async function AdministrationPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string; edit?: string; new?: string; error?: string; success?: string }> }) {
   const actor = await requireStaff();
   const params = await searchParams;
   const roles = manageableRoles(actor.role);
@@ -76,10 +78,11 @@ export default async function AdministrationPage({ searchParams }: { searchParam
   }));
   const enrollmentCount = enrollmentCountRows[0]!.count;
   const editable = editing && canManageUser(actor, editing) ? editing : null;
+  const creatingTeacher = params.new === "teacher" && !editable && roles.includes("INSTRUCTOR");
   const title = actor.role === "SECRETARY" ? "Secretaría" : actor.role === "SUPER_ADMIN" ? "Superadministración" : "Administración";
   const description = actor.role === "SECRETARY" ? "Gestiona estudiantes y matrículas." : actor.role === "SUPER_ADMIN" ? "Gestiona todos los roles y las cuentas del campus." : "Gestiona docentes, estudiantes, Secretaría y matrículas.";
   return <div>
-    <PageHeader title={title} description={description} />
+    <PageHeader title={title} description={description} actions={roles.includes("INSTRUCTOR") ? <Link href="/administration?new=teacher#user-form" className="inline-flex h-10 items-center gap-2 border border-[#0b3ddb] bg-[#0b3ddb] px-4 text-sm font-medium text-white hover:bg-[#0932b5]"><UserPlus className="h-4 w-4" />Añadir profesor</Link> : undefined} />
     <div className="space-y-6 p-4 sm:p-8">
       {params.error && <p role="alert" className="border border-red-200 bg-red-50 p-3 text-sm text-red-800">{params.error}</p>}
       {params.success && <p role="status" className="border border-green-200 bg-green-50 p-3 text-sm text-green-800">{params.success}</p>}
@@ -88,15 +91,15 @@ export default async function AdministrationPage({ searchParams }: { searchParam
       </div>
       <section className="border bg-white p-5" aria-labelledby="accounts-heading">
         <h2 id="accounts-heading" className="mb-4 text-lg font-semibold">Cuentas ({count})</h2>
-        <form className="mb-4 flex flex-wrap gap-2" action="/administration"><Input name="q" aria-label="Buscar por nombre o correo" placeholder="Buscar por nombre o correo" defaultValue={q} className="max-w-sm" /><Button type="submit" variant="outline">Buscar</Button><Link className="self-center text-sm text-blue-700" href="/administration">Limpiar</Link></form>
+        <ClientGetForm className="mb-4 flex flex-wrap gap-2" action="/administration"><Input name="q" aria-label="Buscar por nombre o correo" placeholder="Buscar por nombre o correo" defaultValue={q} className="max-w-sm" /><Button type="submit" variant="outline">Buscar</Button><Link className="self-center text-sm text-blue-700" href="/administration">Limpiar</Link></ClientGetForm>
         <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b text-slate-500"><th className="p-2">Nombre / correo</th><th className="p-2">Rol</th><th className="p-2">Estado</th><th className="p-2">Acciones</th></tr></thead><tbody>{users.map(user => <tr key={user.id} className="border-b"><td className="p-2"><p>{user.name}</p><p className="text-xs text-slate-500">{user.email}</p></td><td className="p-2">{roleLabel(user.role)}</td><td className="p-2">{user.isActive ? "Activo" : "Inactivo"}</td><td className="p-2">{canManageUser(actor, user) ? <Link className="text-blue-700 underline" href={`/administration?edit=${user.id}#user-form`}>Editar</Link> : "Tu cuenta"}</td></tr>)}</tbody></table></div>
         {!users.length && <p className="py-4 text-sm text-slate-500">No se encontraron cuentas.</p>}
         <div className="mt-4 flex gap-4 text-sm"><span>Página {page}</span>{page > 1 && <Link href={`/administration?q=${encodeURIComponent(q)}&page=${page - 1}`}>Anterior</Link>}{page * 20 < count && <Link href={`/administration?q=${encodeURIComponent(q)}&page=${page + 1}`}>Siguiente</Link>}</div>
       </section>
       <section id="user-form" className="border bg-white p-5" aria-labelledby="user-heading">
-        <div className="mb-4 flex justify-between gap-3"><h2 id="user-heading" className="text-lg font-semibold">{editable ? `Editar: ${editable.name}` : "Crear cuenta"}</h2>{params.edit && <Link href="/administration#user-form" className="text-sm text-blue-700">Cancelar edición</Link>}</div>
+        <div className="mb-4 flex justify-between gap-3"><div><h2 id="user-heading" className="text-lg font-semibold">{editable ? `Editar: ${editable.name}` : creatingTeacher ? "Registrar nuevo profesor" : "Crear cuenta"}</h2><p className="mt-1 text-sm text-slate-500">{creatingTeacher ? "Completa los datos de acceso del docente. Después podrás asignarlo a sus cursos." : "Registra una cuenta institucional y define su rol de acceso."}</p></div>{(params.edit || params.new) && <Link href="/administration#user-form" className="text-sm text-blue-700">Cancelar</Link>}</div>
         {params.edit && !editable && <p role="alert" className="mb-4 text-sm text-red-700">Esta cuenta no está disponible para edición.</p>}
-        <UserForm key={editable?.id ?? "new"} roles={roles} user={editable ?? undefined} />
+        <UserForm key={editable?.id ?? (creatingTeacher ? "new-teacher" : "new")} roles={roles} user={editable ?? undefined} defaultRole={creatingTeacher ? "INSTRUCTOR" : undefined} />
         <p className="mt-3 text-xs text-slate-500">Las cuentas inactivas no pueden acceder al campus. No puedes modificar tu propia cuenta desde este panel.</p>
       </section>
       <section className="border bg-white p-5" aria-labelledby="enrollment-heading">

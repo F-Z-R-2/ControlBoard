@@ -33,7 +33,7 @@ function errorMessage(error: unknown) {
 
 export async function saveGradingScaleAction(formData: FormData) {
   const current = await requireStaff();
-  const fields = z.object({ yearId: z.string().min(1), level: z.enum(["INITIAL", "PRIMARY", "SECONDARY"]), version: z.coerce.number().int().min(0) }).safeParse(Object.fromEntries(formData));
+  const fields = z.object({ yearId: z.string().min(1), level: z.enum(["PRIMARY", "SECONDARY"]), version: z.coerce.number().int().min(0) }).safeParse(Object.fromEntries(formData));
   const config = readScaleForm(Object.fromEntries(formData));
   if (!fields.success || !config.success) redirect(`/grading-settings?error=${encodeURIComponent(!config.success ? config.error.issues[0]?.message ?? "Escala inválida" : "Datos inválidos")}`);
   const { yearId, level, version } = fields.data;

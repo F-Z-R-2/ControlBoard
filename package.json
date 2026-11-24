@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "db:schema": "node --env-file-if-exists=.env --import tsx scripts/apply-schema.ts",
+    "db:migrate": "node --env-file-if-exists=.env --import tsx scripts/apply-migrations.ts",
     "db:seed": "node --env-file-if-exists=.env --import tsx db/seed.ts",
     "test:roles": "node --import tsx --test tests/roles.test.ts",
     "admin:bootstrap": "node --env-file-if-exists=.env --import tsx scripts/bootstrap-admin.ts",

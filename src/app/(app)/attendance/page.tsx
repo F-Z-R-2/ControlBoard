@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AttendanceMatrix } from "@/components/attendance-matrix";
+import { ClientGetForm } from "@/components/client-get-form";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,7 +53,7 @@ export default async function AttendancePage({ searchParams }: {
     student: StudentInfo;
     recordedBy: Pick<User, "name">;
   };
-  const [records, enrollments, history, overallRecords] = await Promise.all([
+  const [records, enrollments, history, overallRecords, calendarRecords] = await Promise.all([
     db.query<AttendanceRecord>(
       `SELECT a.*,
          jsonb_build_object('id', u."id", 'name', u."name", 'email', u."email") AS "student",
@@ -93,6 +95,11 @@ export default async function AttendancePage({ searchParams }: {
           [course.id],
         )
       : Promise.resolve([] as (Attendance & { student: StudentInfo })[]),
+    db.query<Pick<Attendance, "date" | "status">>(
+      `SELECT "date", "status" FROM "Attendance"
+       WHERE "courseId" = $1 AND "date" >= $2 AND "date" < $3 ${canManage ? "" : `AND "studentId" = $4`}`,
+      canManage ? [course.id, monthStart, monthEnd] : [course.id, monthStart, monthEnd, user.id],
+    ),
   ]);
   const students = new Map(enrollments.map(item => [item.user.id, item.user]));
   for (const record of records) students.set(record.student.id, record.student);
@@ -112,6 +119,18 @@ export default async function AttendancePage({ searchParams }: {
     counts: overallRecordsByStudent.get(student.id) ?? { PRESENT: 0, ABSENT: 0, LATE: 0, EXCUSED: 0 },
   }));
   const sessionCount = new Set(overallRecords.map(record => record.date.toISOString().slice(0, 10))).size;
+  const monthOffset = (monthStart.getUTCDay() + 6) % 7;
+  const daysInMonth = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 0)).getUTCDate();
+  const calendarCellCount = Math.ceil((monthOffset + daysInMonth) / 7) * 7;
+  const attendanceByDay = new Map<string, number>();
+  for (const record of calendarRecords) {
+    const dateKey = record.date.toISOString().slice(0, 10);
+    attendanceByDay.set(dateKey, (attendanceByDay.get(dateKey) ?? 0) + 1);
+  }
+  const previousMonth = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() - 1, 1)).toISOString().slice(0, 10);
+  const nextMonth = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1)).toISOString().slice(0, 10);
+  const attendanceHref = (value: string) => `/attendance?${new URLSearchParams({ course: course.id, date: value, view })}`;
+  const monthLabel = monthStart.toLocaleDateString("es-PE", { month: "long", year: "numeric", timeZone: "UTC" });
 
   return <div>
     <PageHeader title="Asistencia" description={canManage
@@ -121,7 +140,7 @@ export default async function AttendancePage({ searchParams }: {
       {params.error && <p role="alert" className="border border-red-200 bg-red-50 p-3 text-sm text-red-800">{params.error}</p>}
       {invalidDate && <p role="alert" className="border border-amber-200 bg-amber-50 p-3 text-sm">La fecha no es válida o es futura. Se muestra el día de hoy.</p>}
       {params.success && <p role="status" className="border border-green-200 bg-green-50 p-3 text-sm text-green-800">{params.success}</p>}
-      <form action="/attendance" className="flex flex-wrap items-end gap-4 border bg-white p-5">
+      <ClientGetForm action="/attendance" className="flex flex-wrap items-end gap-4 border bg-white p-5">
         <input type="hidden" name="view" value={view} />
         <label className="min-w-0 flex-1 text-sm">Curso
           <Select name="course" defaultValue={course.id}>
@@ -132,7 +151,30 @@ export default async function AttendancePage({ searchParams }: {
           <Input name="date" type="date" min="2000-01-01" max={today} defaultValue={day} required />
         </label>
         <Button type="submit" variant="outline">Consultar</Button>
-      </form>
+      </ClientGetForm>
+
+      <section className="max-w-xl rounded-lg border border-slate-200 bg-white p-4 sm:p-5" aria-label="Calendario para elegir fecha de asistencia">
+        <div className="mb-4 flex items-center justify-between">
+          <Link href={attendanceHref(previousMonth)} aria-label="Mes anterior" className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">‹</Link>
+          <h2 className="text-sm font-semibold capitalize text-slate-900">{monthLabel}</h2>
+          {nextMonth <= today.slice(0, 7) + "-01" ? <Link href={attendanceHref(nextMonth)} aria-label="Mes siguiente" className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">›</Link> : <span className="h-8 w-8" />}
+        </div>
+        <div className="grid grid-cols-7 gap-1 text-center">
+          {["L", "M", "X", "J", "V", "S", "D"].map((label, index) => <span key={`${label}-${index}`} className="py-1 text-[10px] font-semibold uppercase text-slate-400">{label}</span>)}
+          {Array.from({ length: calendarCellCount }, (_, index) => {
+            const dateNumber = index - monthOffset + 1;
+            if (dateNumber < 1 || dateNumber > daysInMonth) return <span key={index} />;
+            const dateKey = `${day.slice(0, 7)}-${String(dateNumber).padStart(2, "0")}`;
+            const selected = dateKey === day;
+            const future = dateKey > today;
+            const recordCount = attendanceByDay.get(dateKey) ?? 0;
+            return future
+              ? <span key={dateKey} className="relative flex h-10 flex-col items-center justify-center rounded-md text-xs text-slate-300">{dateNumber}</span>
+              : <Link key={dateKey} href={attendanceHref(dateKey)} aria-current={selected ? "date" : undefined} className={`relative flex h-10 flex-col items-center justify-center rounded-md text-xs transition-colors ${selected ? "bg-blue-800 font-semibold text-white" : "text-slate-700 hover:bg-blue-50 hover:text-blue-800"}`}><span>{dateNumber}</span>{recordCount > 0 && <span className={`mt-0.5 text-[9px] ${selected ? "text-blue-100" : "text-blue-700"}`}>{recordCount} reg.</span>}</Link>;
+          })}
+        </div>
+        <p className="mt-3 text-[11px] text-slate-500">Selecciona un día para consultar o registrar la asistencia.</p>
+      </section>
 
       {!canManage && <section aria-label="Resumen del mes">
         <h2 className="mb-3 text-lg font-semibold">{`Resumen de ${day.slice(0, 7)}`}</h2>

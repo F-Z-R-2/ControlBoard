@@ -8,6 +8,7 @@ import {
   LogOut,
   Menu,
   MessageSquare,
+  GraduationCap,
   Settings,
   X,
 } from "lucide-react";
@@ -15,10 +16,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { logoutAction } from "@/app/actions/auth";
-import {
-  PendingTasks,
-  type PendingTaskGroup,
-} from "@/components/pending-tasks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { canAccessPsychology } from "@/lib/psychology";
@@ -112,7 +109,7 @@ function Sidebar({
           aria-label="Navegación principal"
           className="mt-3 flex-1 space-y-0.5 overflow-y-auto px-2"
         >
-          {[...navigation, ...(canAccessPsychology(user.role) ? [{ label: "Psicología", icon: MessageSquare, href: "/psychology" }] : []), ...(isStaff(user.role) ? [{ label: "Escalas de notas", icon: ClipboardList, href: "/grading-settings" }, { label: "Gestión académica", icon: BookOpen, href: "/academics" }, { label: user.role === "SECRETARY" ? "Secretaría" : "Administración", icon: Settings, href: "/administration" }] : [])].map(({ href, icon: Icon, label }) => {
+          {[...navigation, ...(canAccessPsychology(user.role) ? [{ label: "Psicología", icon: MessageSquare, href: "/psychology" }] : []), ...(isStaff(user.role) ? [{ label: "Estudiantes", icon: GraduationCap, href: "/students" }, { label: "Escalas de notas", icon: ClipboardList, href: "/grading-settings" }, { label: "Gestión académica", icon: BookOpen, href: "/academics" }, { label: user.role === "SECRETARY" ? "Secretaría" : "Administración", icon: Settings, href: "/administration" }] : [])].map(({ href, icon: Icon, label }) => {
             const active = isActive(pathname, href);
             return (
               <Link
@@ -160,17 +157,16 @@ function Sidebar({
 
 export function AppShell({
   user,
-  tasks,
+  taskPanel,
   children,
 }: {
   user: ShellUser;
-  tasks: PendingTaskGroup[];
+  taskPanel: ReactNode;
   children: ReactNode;
 }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
-  const pendingCount = tasks.reduce((sum, group) => sum + group.items.length, 0);
 
   return (
     <div className="flex h-screen min-h-[600px] w-full overflow-hidden bg-[#f6f6f6] text-[#222]">
@@ -209,7 +205,7 @@ export function AppShell({
         <div className="flex min-h-0 flex-1">
           <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
           <aside className="hidden w-[310px] shrink-0 flex-col border-l border-[#d8d8d8] bg-white xl:flex">
-            <PendingTasks groups={tasks} />
+            {taskPanel}
           </aside>
         </div>
       </div>
@@ -220,7 +216,7 @@ export function AppShell({
         className="fixed bottom-5 right-5 z-20 flex items-center gap-2 border border-[#0b3ddb] bg-[#0b3ddb] px-3 py-2 text-xs font-medium text-white shadow-lg xl:hidden"
       >
         <CalendarDays className="h-4 w-4" />
-        Tareas ({pendingCount})
+        Tareas pendientes
       </button>
 
       {tasksOpen ? (
@@ -244,7 +240,7 @@ export function AppShell({
                 <X className="h-4 w-4" />
               </Button>
             </div>
-            <PendingTasks groups={tasks} />
+            {taskPanel}
           </aside>
         </div>
       ) : null}

@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { db } from "@/lib/db";
-import type { Assignment, Submission, User } from "@/lib/db-types";
+import type { Assignment, Submission } from "@/lib/db-types";
 import { getCourseAccess } from "@/lib/permissions";
 import { formatDateTime } from "@/lib/utils";
 
@@ -98,7 +98,7 @@ export default async function AssignmentsPage({
                   href={`/courses/${course.id}/assignments/${assignment.id}`}
                   className="block"
                 >
-                  <Card className="p-5 transition-colors hover:border-indigo-200">
+                  <Card className="p-5 transition-all hover:border-indigo-300 hover:shadow-sm">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <h3 className="font-semibold text-slate-900">

@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { attendanceLabels, attendancePercentage, canRecordAttendance, schoolDate, validAttendanceDate } from "@/lib/attendance";
 import { getCourseAccess } from "@/lib/permissions";
 import { db } from "@/lib/db";
-import type { Attendance, Enrollment, User } from "@/lib/db-types";
+import type { Attendance, User } from "@/lib/db-types";
 
 type StudentRef = Pick<User, "id" | "name" | "email">;
 type AttendanceWithStudent = Attendance & { student: StudentRef };
