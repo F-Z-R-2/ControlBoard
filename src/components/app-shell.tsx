@@ -19,7 +19,7 @@ import { useState, type ReactNode } from "react";
 import { logoutAction } from "@/app/actions/auth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { canAccessPsychology } from "@/lib/psychology";
+import { canViewPsychologyMaterials } from "@/lib/psychology";
 import { isStaff } from "@/lib/roles";
 import { initials, roleLabel } from "@/lib/utils";
 
@@ -113,7 +113,9 @@ function Sidebar({
           aria-label="Navegación principal"
           className="mt-3 flex-1 space-y-0.5 overflow-y-auto px-2"
         >
-          {[...primaryNavigation, ...(canAccessPsychology(user.role) ? [{ label: "Psicología", icon: MessageSquare, href: "/psychology" }] : []), ...(isStaff(user.role) ? [{ label: "Estudiantes", icon: GraduationCap, href: "/students" }, { label: "Escalas de notas", icon: ClipboardList, href: "/grading-settings" }, { label: "Gestión académica", icon: BookOpen, href: "/academics" }, { label: user.role === "SECRETARY" ? "Secretaría" : "Administración", icon: Settings, href: "/administration" }, { label: "Caja y pagos", icon: WalletCards, href: "/payments" }] : [])].map(({ href, icon: Icon, label }) => {
+
+          {[...primaryNavigation, ...(canViewPsychologyMaterials(user.role) ? [{ label: "Psicología", icon: MessageSquare, href: "/psychology" }] : []), ...(isStaff(user.role) ? [{ label: "Estudiantes", icon: GraduationCap, href: "/students" }, { label: "Escalas de notas", icon: ClipboardList, href: "/grading-settings" }, { label: "Gestión académica", icon: BookOpen, href: "/academics" }, { label: user.role === "SECRETARY" ? "Secretaría" : "Administración", icon: Settings, href: "/administration" }, { label: "Caja y pagos", icon: WalletCards, href: "/payments" }] : [])].map(({ href, icon: Icon, label }) => {
+
             const active = isActive(pathname, href);
             return (
               <Link

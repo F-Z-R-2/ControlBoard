@@ -1,26 +1,70 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Download } from "lucide-react";
 import { psychologyAction } from "@/app/actions/psychology";
 import { ClientGetForm } from "@/components/client-get-form";
 import { ManagementSubmit } from "@/components/management-submit";
 import { PageHeader } from "@/components/page-header";
+import { PsychologyMaterialForm } from "@/components/psychology-material-form";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { db } from "@/lib/db";
-import type { PsychologyCase, User } from "@/lib/db-types";
+import type { PsychologyCase, PsychologyMaterial, User } from "@/lib/db-types";
 import { requireUser } from "@/lib/permissions";
-import { canAccessPsychology, psychologyCategories, psychologyStatuses } from "@/lib/psychology";
+import { canAccessPsychology, canManagePsychologyMaterials, canViewPsychologyMaterials, psychologyCategories, psychologyStatuses } from "@/lib/psychology";
 
 export const metadata: Metadata = { title: "Psicología" };
+
+function PsychologyMaterials({
+  materials,
+  canUpload,
+}: {
+  materials: Pick<PsychologyMaterial, "id" | "title">[];
+  canUpload: boolean;
+}) {
+  return <section className="space-y-4 border bg-white p-5">
+    <div>
+      <h2 className="text-lg font-semibold">Fichas y materiales</h2>
+      <p className="mt-1 text-sm text-slate-500">Recursos de orientación disponibles para descargar.</p>
+    </div>
+    {canUpload && <PsychologyMaterialForm />}
+    {!materials.length ? <p className="text-sm text-slate-500">Aún no hay fichas disponibles.</p> : <ul className="divide-y">
+      {materials.map(material => <li key={material.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+        <span className="font-medium">{material.title}</span>
+        <Link
+          href={`/api/psychology/materials/${encodeURIComponent(material.id)}`}
+          className={buttonVariants({ variant: "outline", size: "sm" })}
+        >
+          <Download className="h-4 w-4" />
+          Descargar
+        </Link>
+      </li>)}
+    </ul>}
+  </section>;
+}
 
 export default async function PsychologyPage({ searchParams }: {
   searchParams: Promise<{ q?: string; page?: string; error?: string; success?: string }>;
 }) {
   const user = await requireUser();
-  if (!canAccessPsychology(user.role)) notFound();
+  if (!canViewPsychologyMaterials(user.role)) notFound();
   const search = await searchParams;
+  if (user.role === "STUDENT") {
+    const materials = await db.sql<Pick<PsychologyMaterial, "id" | "title">>`
+      SELECT "id", "title" FROM "PsychologyMaterial" ORDER BY "createdAt" DESC, "id" ASC
+    `;
+    return <div>
+      <PageHeader title="Psicología" description="Fichas y recursos de orientación para estudiantes." />
+      <div className="space-y-6 p-4 sm:p-8">
+        {search.error && <p role="alert" className="border border-red-200 bg-red-50 p-3 text-sm text-red-800">{search.error}</p>}
+        {search.success && <p role="status" className="border border-green-200 bg-green-50 p-3 text-sm text-green-800">{search.success}</p>}
+        <PsychologyMaterials materials={materials} canUpload={false} />
+      </div>
+    </div>;
+  }
+  if (!canAccessPsychology(user.role)) notFound();
   const q = (search.q ?? "").trim().slice(0, 120);
   const page = Math.max(1, Math.min(10000, Number.parseInt(search.page ?? "1", 10) || 1));
   type CaseRow = Pick<PsychologyCase, "id" | "category" | "status"> & {
@@ -42,7 +86,7 @@ export default async function PsychologyPage({ searchParams }: {
     JOIN "User" su ON su."id" = pc."studentId"
     JOIN "User" pu ON pu."id" = pc."psychologistId"`;
   const caseParams = [...params, 20, (page - 1) * 20];
-  const [cases, countRows, students, professionals] = await Promise.all([
+  const [cases, countRows, students, professionals, materials] = await Promise.all([
     db.query<CaseRow>(
       `SELECT pc."id", pc."category", pc."status",
          jsonb_build_object('name', su."name") AS "student",
@@ -68,6 +112,9 @@ export default async function PsychologyPage({ searchParams }: {
           SELECT "id", "name" FROM "User"
           WHERE "role" = 'PSYCHOLOGIST' AND "isActive" = TRUE ORDER BY "name" ASC
         `,
+    db.sql<Pick<PsychologyMaterial, "id" | "title">>`
+      SELECT "id", "title" FROM "PsychologyMaterial" ORDER BY "createdAt" DESC, "id" ASC
+    `,
   ]);
   const count = countRows[0]!.count;
   return <div>
@@ -75,6 +122,7 @@ export default async function PsychologyPage({ searchParams }: {
     <div className="space-y-6 p-4 sm:p-8">
       {search.error && <p role="alert" className="border border-red-200 bg-red-50 p-3 text-sm text-red-800">{search.error}</p>}
       {search.success && <p role="status" className="border border-green-200 bg-green-50 p-3 text-sm text-green-800">{search.success}</p>}
+      <PsychologyMaterials materials={materials} canUpload={canManagePsychologyMaterials(user.role)} />
       <section className="space-y-4 border bg-white p-5">
         <h2 className="text-lg font-semibold">Fichas ({count})</h2>
         <ClientGetForm action="/psychology" className="flex gap-3"><Input name="q" defaultValue={q} placeholder="Buscar estudiante" aria-label="Buscar estudiante" maxLength={120} /><Button type="submit" variant="outline">Buscar</Button></ClientGetForm>

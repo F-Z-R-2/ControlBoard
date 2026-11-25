@@ -9,6 +9,12 @@ export const appointmentStatuses = { SCHEDULED: "Programada", ATTENDED: "Atendid
 export function canAccessPsychology(role: string) {
   return isStaff(role) || role === "PSYCHOLOGIST";
 }
+export function canViewPsychologyMaterials(role: string) {
+  return role === "STUDENT" || canAccessPsychology(role);
+}
+export function canManagePsychologyMaterials(role: string) {
+  return canAccessPsychology(role);
+}
 export function canWritePsychologyNotes(user: { id: string; role: string }, psychologistId: string) {
   return user.role === "PSYCHOLOGIST" && user.id === psychologistId;
 }

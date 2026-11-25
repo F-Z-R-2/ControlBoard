@@ -216,13 +216,15 @@ Pruebas: `npm run test:grading`.
 
 Administración y Superadministración pueden crear cuentas con el nuevo rol `PSYCHOLOGIST`. El módulo `/psychology` permite abrir una ficha por estudiante, asignarla al profesional desde su creación, coordinar citas y registrar seguimiento.
 
+- Psicología y el personal autorizado pueden subir fichas PDF de hasta 4 MB; estudiantes pueden descargarlas desde una vista que no muestra derivaciones ni datos clínicos. Se requiere `BLOB_READ_WRITE_TOKEN`.
+- En instalaciones existentes, aplica la migración con `npm run db:migrate:psychology-materials`. En bases nuevas, `npm run db:schema` ya incluye la tabla.
 - Secretaría y administradores ven datos de derivación, profesional, estado de la ficha y citas. Pueden abrir derivaciones, programar y cancelar citas. No pueden leer ni registrar las notas de atención.
 - El psicólogo ve únicamente sus fichas asignadas. Puede registrar notas de atención, marcar atención o inasistencia, cambiar el estado a pendiente/seguimiento/cerrado y reabrir fichas. No hay diagnósticos automáticos.
-- Docentes, estudiantes y otros psicólogos no tienen acceso a una ficha ajena. Las páginas administrativas no consultan las notas clínicas; las acciones vuelven a verificar los permisos y el estado activo de la cuenta en el servidor.
+- Docentes, estudiantes y otros psicólogos no tienen acceso a fichas clínicas ajenas; los estudiantes solo ven los materiales publicados. Las páginas administrativas no consultan las notas clínicas; las acciones vuelven a verificar los permisos y el estado activo de la cuenta en el servidor.
 - Las notas son entradas inmutables de hasta 5000 caracteres: una corrección se documenta con una nueva nota. El listado de seguimiento está paginado.
 - Citas de 30, 45 o 60 minutos, en horario de Lima, sin cruces para el profesional ni el estudiante. Se muestran las próximas 20 citas y las 20 anteriores/canceladas más recientes por ficha. Reprogramar requiere cancelar y crear la nueva cita.
 - Cerrar una ficha cancela sus citas futuras; conserva citas pasadas y seguimiento. Se permite añadir notas de corrección a fichas cerradas.
 
-Esta primera versión no incluye transferencia de fichas entre profesionales, adjuntos, firma de consentimientos, exportaciones clínicas ni avisos automáticos. La privacidad descrita corresponde a los permisos de la aplicación; no se añadió cifrado de campos ni una auditoría de lectura.
+Esta primera versión no incluye transferencia de fichas entre profesionales, adjuntos clínicos, firma de consentimientos, exportaciones clínicas ni avisos automáticos. La privacidad descrita corresponde a los permisos de la aplicación; no se añadió cifrado de campos ni una auditoría de lectura.
 
 Pruebas: `npm run test:psychology`.
