@@ -6,10 +6,12 @@ import { psychologyAction } from "@/app/actions/psychology";
 import { ClientGetForm } from "@/components/client-get-form";
 import { ManagementSubmit } from "@/components/management-submit";
 import { PageHeader } from "@/components/page-header";
+import { PsychologyMaterialDeleteForm } from "@/components/psychology-material-delete-form";
 import { PsychologyMaterialForm } from "@/components/psychology-material-form";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { renamePsychologyMaterialAction } from "@/app/actions/psychology-materials";
 import { db } from "@/lib/db";
 import type { PsychologyCase, PsychologyMaterial, User } from "@/lib/db-types";
 import { requireUser } from "@/lib/permissions";
@@ -32,14 +34,34 @@ function PsychologyMaterials({
     {canUpload && <PsychologyMaterialForm />}
     {!materials.length ? <p className="text-sm text-slate-500">Aún no hay fichas disponibles.</p> : <ul className="divide-y">
       {materials.map(material => <li key={material.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-        <span className="font-medium">{material.title}</span>
-        <Link
-          href={`/api/psychology/materials/${encodeURIComponent(material.id)}`}
-          className={buttonVariants({ variant: "outline", size: "sm" })}
-        >
-          <Download className="h-4 w-4" />
-          Descargar
-        </Link>
+        <div className="flex w-full items-center justify-between gap-3">
+          <span className="font-medium">{material.title}</span>
+          <Link
+            href={`/api/psychology/materials/${encodeURIComponent(material.id)}`}
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            <Download className="h-4 w-4" />
+            Descargar
+          </Link>
+        </div>
+        {canUpload ? (
+          <div className="flex w-full flex-wrap gap-2">
+            <form action={renamePsychologyMaterialAction} className="flex min-w-0 flex-1 gap-2">
+              <input type="hidden" name="id" value={material.id} />
+              <Input
+                name="title"
+                defaultValue={material.title}
+                maxLength={140}
+                required
+                aria-label={`Editar nombre de ${material.title}`}
+              />
+              <Button type="submit" variant="outline" size="sm">
+                Guardar nombre
+              </Button>
+            </form>
+            <PsychologyMaterialDeleteForm id={material.id} title={material.title} />
+          </div>
+        ) : null}
       </li>)}
     </ul>}
   </section>;
