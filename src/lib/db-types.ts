@@ -189,6 +189,28 @@ export interface SchoolSection {
   name: string;
 }
 
+export interface StudentProfile {
+  id: string;
+  userId: string;
+  documentNumber: string;
+  studentCode: string;
+  schoolSectionId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface StudentGuardian {
+  id: string;
+  studentId: string;
+  fullName: string;
+  relationship: string;
+  documentNumber: string | null;
+  phone: string | null;
+  email: string | null;
+  position: number;
+  createdAt: Date;
+}
+
 export interface GradingScale {
   id: string;
   yearId: string;

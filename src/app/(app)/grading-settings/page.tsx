@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { GradingScaleForm } from "@/components/grading-scale-form";
+import { ClientGetForm } from "@/components/client-get-form";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
-import { schoolLevels } from "@/lib/academics";
+import { activeSchoolLevels } from "@/lib/academics";
 import { db } from "@/lib/db";
 import type { AcademicYear, GradingScale } from "@/lib/db-types";
 import { scaleLabel, scaleSchema } from "@/lib/grading";
@@ -35,11 +36,11 @@ export default async function GradingSettingsPage({ searchParams }: {
       {params.success && <p role="status" className="border border-green-200 bg-green-50 p-3 text-sm text-green-800">{params.success}</p>}
       <p className="text-sm text-slate-600">Las notas anteriores conservan su escala original. Los cambios se aplican a nuevas notas y a las correcciones que el docente guarde después. Las tareas siguen usando su puntaje propio.</p>
       {!year ? <p className="text-sm">Primero <Link className="text-blue-700 underline" href="/academics">crea un año lectivo</Link>.</p> : <>
-        <form action="/grading-settings" className="flex flex-wrap items-end gap-3 border bg-white p-5">
+      <ClientGetForm action="/grading-settings" className="flex flex-wrap items-end gap-3 border bg-white p-5">
           <label className="flex-1 text-sm">Año lectivo<Select name="year" defaultValue={year.id}>{years.map(item => <option key={item.id} value={item.id}>{item.name}{item.isClosed ? " (cerrado)" : ""}</option>)}</Select></label>
           <Button type="submit" variant="outline">Consultar</Button>
-        </form>
-        {Object.entries(schoolLevels).map(([level, label]) => {
+      </ClientGetForm>
+        {Object.entries(activeSchoolLevels).map(([level, label]) => {
           const saved = year.gradingScales.find(scale => scale.level === level);
           const config = saved ? scaleSchema.parse(saved.config) : undefined;
           return <section key={`${year.id}-${level}-${saved?.version ?? 0}`} className="space-y-4 border bg-white p-5">

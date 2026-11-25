@@ -76,15 +76,15 @@ export default async function GradesOverviewPage() {
         ) : (
           <Card>
             <CardContent className="p-0">
-              <table className="w-full min-w-[640px] text-sm">
+              <table className="w-full min-w-[700px] border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-[#e5e5e5] bg-[#fafafa] text-left text-[11px] uppercase tracking-wider text-[#666]">
-                    <th className="px-5 py-3 font-medium">Curso</th>
-                    <th className="px-5 py-3 font-medium">Periodo</th>
-                    <th className="px-5 py-3 font-medium">
+                    <th className="px-5 py-3 font-semibold">Curso</th>
+                    <th className="px-5 py-3 font-semibold">Periodo</th>
+                      <th className="px-5 py-3 font-semibold">
                       {isStudent ? "Promedio" : "Por calificar"}
                     </th>
-                    <th className="px-5 py-3 font-medium">
+                      <th className="px-5 py-3 font-semibold">
                       {isStudent ? "Entregas" : "Estudiantes"}
                     </th>
                     <th className="px-5 py-3 font-medium" />
@@ -114,9 +114,9 @@ export default async function GradesOverviewPage() {
                     );
 
                     return (
-                      <tr key={course.id}>
+                        <tr key={course.id} className="transition-colors hover:bg-blue-50/40">
                         <td className="px-5 py-4">
-                          <p className="font-medium text-[#242424]">
+                          <p className="font-semibold text-[#242424]">
                             {course.code}
                           </p>
                           <p className="text-xs text-[#666]">{course.title}</p>
@@ -143,7 +143,7 @@ export default async function GradesOverviewPage() {
                         <td className="px-5 py-4 text-right">
                           <Link
                             href={`/courses/${course.id}/grades`}
-                            className="inline-flex items-center gap-1 text-xs font-medium text-[#0b3ddb] hover:underline"
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-[#0b3ddb] hover:underline"
                           >
                             Ver notas
                             <ArrowRight className="h-3.5 w-3.5" />

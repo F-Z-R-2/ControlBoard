@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { db } from "@/lib/db";
-import type { Enrollment, GradingScale, PeriodGrade, User } from "@/lib/db-types";
+import type { GradingScale, PeriodGrade, User } from "@/lib/db-types";
 import { gradeLabel, scaleLabel, scaleSchema, validGrade, type GradeScale } from "@/lib/grading";
 import { getCourseAccess } from "@/lib/permissions";
 

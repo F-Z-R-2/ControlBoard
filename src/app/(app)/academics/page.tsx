@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
-import { saveAcademicAction } from "@/app/actions/academics";
+import { generateSchoolStructureAction, saveAcademicAction } from "@/app/actions/academics";
+import { ClientGetForm } from "@/components/client-get-form";
 import { ManagementSubmit } from "@/components/management-submit";
 import { PageHeader } from "@/components/page-header";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { schoolLevels } from "@/lib/academics";
+import { gradeLabel, schoolLevels } from "@/lib/academics";
 import { db } from "@/lib/db";
 import type { AcademicPeriod, AcademicYear, Course, SchoolGrade, SchoolSection } from "@/lib/db-types";
 import { requireStaff } from "@/lib/permissions";
@@ -50,7 +51,7 @@ export default async function AcademicsPage({ searchParams }: {
        FROM "AcademicYear" ay
        ORDER BY ay."startsOn" DESC`,
     ),
-    db.sql<SchoolGrade>`SELECT * FROM "SchoolGrade" ORDER BY "level" ASC, "position" ASC, "name" ASC`,
+    db.sql<SchoolGrade>`SELECT * FROM "SchoolGrade" WHERE "level" IN ('PRIMARY', 'SECONDARY') ORDER BY "level" ASC, "position" ASC, "name" ASC`,
   ]);
   const years = yearRows.map(({ periodCount, sectionCount, ...item }) => ({
     ...item,
@@ -68,7 +69,7 @@ export default async function AcademicsPage({ searchParams }: {
              (SELECT COUNT(*)::int FROM "Course" c WHERE c."sectionId" = ss."id") AS "courseCount"
            FROM "SchoolSection" ss
            JOIN "SchoolGrade" sg ON sg."id" = ss."gradeId"
-           WHERE ss."yearId" = $1
+       WHERE ss."yearId" = $1 AND sg."level" IN ('PRIMARY', 'SECONDARY') AND ss."name" IN ('A', 'B')
            ORDER BY sg."position" ASC, ss."name" ASC`,
           [year.id],
         )
@@ -120,30 +121,25 @@ export default async function AcademicsPage({ searchParams }: {
       </section>
 
       <section className="space-y-4 border bg-white p-5" aria-labelledby="grades-title">
-        <h2 id="grades-title" className="text-lg font-semibold">2. Grados</h2>
-        <p className="text-xs text-slate-500">Catálogo compartido entre años. Los grados usados en años cerrados no se pueden modificar.</p>
-        {grades.map(grade => <details key={grade.id} className="border p-3">
-          <summary className="cursor-pointer text-sm font-medium">{schoolLevels[grade.level]} · {grade.name}</summary>
-          <div className="mt-4"><AcademicForm kind="grade" hidden={{ id: grade.id }}>
-            <NameField value={grade.name} />
-            <label className="text-sm">Nivel<Select name="level" defaultValue={grade.level}>{Object.entries(schoolLevels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</Select></label>
-            <label className="text-sm">Orden<Input type="number" name="position" defaultValue={grade.position} min={1} max={20} required /></label>
-          </AcademicForm></div>
-        </details>)}
-        <details className="border p-3" open={!grades.length}><summary className="cursor-pointer text-sm font-medium">Crear grado</summary>
-          <div className="mt-4"><AcademicForm kind="grade" label="Crear grado">
-            <NameField label="Nombre (por ejemplo, 1.º)" />
-            <label className="text-sm">Nivel<Select name="level">{Object.entries(schoolLevels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</Select></label>
-            <label className="text-sm">Orden<Input type="number" name="position" defaultValue={1} min={1} max={20} required /></label>
-          </AcademicForm></div>
-        </details>
+        <h2 id="grades-title" className="text-lg font-semibold">2. Niveles y grados</h2>
+        <p className="text-xs text-slate-500">La estructura del colegio contempla solo Primaria (1.º a 6.º) y Secundaria (1.º a 5.º).</p>
+        <div className="grid gap-4 md:grid-cols-2">
+          {(["PRIMARY", "SECONDARY"] as const).map(level => {
+            const levelGrades = grades.filter(grade => grade.level === level);
+            const expected = level === "PRIMARY" ? 6 : 5;
+            return <article key={level} className="rounded-md border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-center justify-between"><h3 className="text-sm font-semibold text-slate-900">{schoolLevels[level]}</h3><span className="text-xs text-slate-500">{levelGrades.length}/{expected} grados</span></div>
+              <div className="mt-3 flex flex-wrap gap-2">{levelGrades.map(grade => <span key={grade.id} className="rounded border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium">{gradeLabel(grade.name)}</span>)}</div>
+            </article>;
+          })}
+        </div>
       </section>
 
       {year && <>
-        <form action="/academics" className="flex flex-wrap items-end gap-3 border bg-blue-50 p-4">
+        <ClientGetForm action="/academics" className="flex flex-wrap items-end gap-3 border bg-blue-50 p-4">
           <label className="flex-1 text-sm">Año para periodos, secciones y cursos<Select name="year" defaultValue={year.id}>{years.map(item => <option key={item.id} value={item.id}>{item.name}{item.isClosed ? " (cerrado)" : ""}</option>)}</Select></label>
           <Button type="submit" variant="outline">Consultar</Button>
-        </form>
+        </ClientGetForm>
         <section className="space-y-4 border bg-white p-5" aria-labelledby="periods-title">
           <h2 id="periods-title" className="text-lg font-semibold">3. Periodos de {year.name}</h2>
           <p className="text-xs text-slate-500">Entre {dateValue(year.startsOn)} y {dateValue(year.endsOn)}. Los periodos no pueden superponerse.</p>
@@ -157,25 +153,26 @@ export default async function AcademicsPage({ searchParams }: {
           </details>}
         </section>
         <section className="space-y-4 border bg-white p-5" aria-labelledby="sections-title">
-          <h2 id="sections-title" className="text-lg font-semibold">4. Secciones de {year.name}</h2>
-          {!sections.length && <p className="text-sm text-slate-500">No hay secciones registradas.</p>}
-          {sections.map(section => <details key={section.id} className="border p-3">
-            <summary className="cursor-pointer text-sm font-medium">{schoolLevels[section.grade.level]} · {section.grade.name} · {section.name} · {section._count.courses} cursos</summary>
-            {!year.isClosed && <div className="mt-4"><AcademicForm kind="section" hidden={{ id: section.id, yearId: year.id, gradeId: section.gradeId }}><NameField value={section.name} label="Sección" /></AcademicForm></div>}
-          </details>)}
-          {!year.isClosed && grades.length > 0 && <details className="border p-3"><summary className="cursor-pointer text-sm font-medium">Crear sección</summary>
-            <div className="mt-4"><AcademicForm kind="section" hidden={{ yearId: year.id }} label="Crear sección">
-              <NameField label="Sección (por ejemplo, A)" />
-              <label className="text-sm">Grado<Select name="gradeId">{grades.map(grade => <option key={grade.id} value={grade.id}>{schoolLevels[grade.level]} · {grade.name}</option>)}</Select></label>
-            </AcademicForm></div>
-          </details>}
+          <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 id="sections-title" className="text-lg font-semibold">4. Grados y secciones de {year.name}</h2><p className="mt-1 text-xs text-slate-500">Crea de una vez los 11 grados y sus 22 secciones A/B. Si la estructura ya existe, solo completa lo que falte.</p></div>
+            {!year.isClosed && <form action={generateSchoolStructureAction} className="shrink-0"><input type="hidden" name="yearId" value={year.id} /><Button type="submit">Crear estructura A/B</Button></form>}
+          </div>
+          {(["PRIMARY", "SECONDARY"] as const).map(level => {
+            const levelGrades = grades.filter(grade => grade.level === level);
+            return <section key={level} className="space-y-3" aria-label={schoolLevels[level]}>
+              <h3 className="text-sm font-semibold text-slate-800">{schoolLevels[level]}</h3>
+              {levelGrades.length ? <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{levelGrades.map(grade => {
+                const gradeSections = sections.filter(section => section.gradeId === grade.id);
+                return <article key={grade.id} className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2.5"><span className="text-sm font-medium text-slate-800">{gradeLabel(grade.name)}</span><div className="flex gap-1.5">{(["A", "B"] as const).map(sectionName => { const section = gradeSections.find(item => item.name === sectionName); return <span key={sectionName} className={`min-w-14 rounded border px-2 py-1 text-center text-[11px] ${section ? "border-blue-100 bg-blue-50 text-blue-900" : "border-amber-200 bg-amber-50 text-amber-800"}`}>{sectionName}{section ? ` · ${section._count.courses}` : " · Falta"}</span>; })}</div></article>;
+              })}</div> : <p className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">Aún no está configurado este nivel. Usa “Crear estructura A/B”.</p>}
+            </section>;
+          })}
         </section>
         <section className="space-y-4 border bg-white p-5" aria-labelledby="courses-title">
           <h2 id="courses-title" className="text-lg font-semibold">5. Vincular cursos</h2>
           <p className="text-xs text-slate-500">Cada curso puede vincularse a una sección y un periodo del mismo año. Esto conserva sus estudiantes, contenido y notas.</p>
           {!year.isClosed && periods.length > 0 && sections.length > 0 ? <AcademicForm kind="assignment" label="Vincular curso">
             <label className="text-sm">Curso<Select name="courseId" required defaultValue=""><option value="" disabled>Selecciona un curso</option>{courses.filter(course => !course.section?.year.isClosed).map(course => <option key={course.id} value={course.id}>{course.code} · {course.title}{course.section ? ` (vinculado a ${course.section.year.name})` : ""}</option>)}</Select></label>
-            <label className="text-sm">Sección<Select name="sectionId">{sections.map(section => <option key={section.id} value={section.id}>{schoolLevels[section.grade.level]} · {section.grade.name} · {section.name}</option>)}</Select></label>
+            <label className="text-sm">Sección<Select name="sectionId">{sections.map(section => <option key={section.id} value={section.id}>{schoolLevels[section.grade.level]} · {gradeLabel(section.grade.name)} · {section.name}</option>)}</Select></label>
             <label className="text-sm">Periodo<Select name="academicPeriodId">{periods.map(period => <option key={period.id} value={period.id}>{period.name}</option>)}</Select></label>
           </AcademicForm> : <p className="text-sm text-slate-500">Para vincular cursos necesitas un año abierto con periodos y secciones.</p>}
           <div className="divide-y">{courses.filter(course => course.section?.yearId === year.id).map(course => <div key={course.id} className="flex flex-wrap items-center justify-between gap-3 py-3">

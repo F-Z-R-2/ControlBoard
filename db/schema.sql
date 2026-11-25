@@ -254,6 +254,7 @@ CREATE TABLE "PsychologyAppointment" (
     CONSTRAINT "PsychologyAppointment_pkey" PRIMARY KEY ("id")
 );
 
+
 CREATE TABLE "PsychologyMaterial" (
     "id" TEXT NOT NULL,
     "title" TEXT NOT NULL,
@@ -262,6 +263,69 @@ CREATE TABLE "PsychologyMaterial" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "PsychologyMaterial_pkey" PRIMARY KEY ("id")
 );
+
+CREATE TABLE "StudentProfile" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "documentNumber" TEXT NOT NULL,
+    "studentCode" TEXT NOT NULL,
+    "schoolSectionId" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "StudentProfile_pkey" PRIMARY KEY ("id")
+);
+
+CREATE TABLE "StudentGuardian" (
+    "id" TEXT NOT NULL,
+    "studentId" TEXT NOT NULL,
+    "fullName" TEXT NOT NULL,
+    "relationship" TEXT NOT NULL,
+    "documentNumber" TEXT,
+    "phone" TEXT,
+    "email" TEXT,
+    "position" INTEGER NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "StudentGuardian_pkey" PRIMARY KEY ("id")
+);
+
+CREATE TABLE "IncomeReceiptCounter" (
+    "id" TEXT NOT NULL,
+    "nextNumber" INTEGER NOT NULL DEFAULT 1,
+    CONSTRAINT "IncomeReceiptCounter_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "IncomeReceiptCounter_id_check" CHECK ("id" = 'main'),
+    CONSTRAINT "IncomeReceiptCounter_nextNumber_check" CHECK ("nextNumber" > 0)
+);
+
+CREATE TABLE "IncomeReceipt" (
+    "id" TEXT NOT NULL,
+    "receiptNumber" INTEGER NOT NULL,
+    "issuedOn" DATE NOT NULL,
+    "receivedFrom" TEXT NOT NULL,
+    "documentNumber" TEXT,
+    "totalAmount" NUMERIC(12,2) NOT NULL,
+    "note" TEXT NOT NULL DEFAULT '',
+    "issuedById" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "IncomeReceipt_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "IncomeReceipt_receiptNumber_check" CHECK ("receiptNumber" > 0),
+    CONSTRAINT "IncomeReceipt_totalAmount_check" CHECK ("totalAmount" > 0),
+    CONSTRAINT "IncomeReceipt_issuedById_fkey" FOREIGN KEY ("issuedById") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+CREATE TABLE "IncomeReceiptLine" (
+    "id" TEXT NOT NULL,
+    "receiptId" TEXT NOT NULL,
+    "conceptCode" TEXT NOT NULL,
+    "conceptLabel" TEXT NOT NULL,
+    "reportCode" TEXT NOT NULL DEFAULT '',
+    "amount" NUMERIC(12,2) NOT NULL,
+    CONSTRAINT "IncomeReceiptLine_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "IncomeReceiptLine_amount_check" CHECK ("amount" > 0),
+    CONSTRAINT "IncomeReceiptLine_receiptId_fkey" FOREIGN KEY ("receiptId") REFERENCES "IncomeReceipt"("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+INSERT INTO "IncomeReceiptCounter" ("id", "nextNumber") VALUES ('main', 1);
+
 
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 CREATE UNIQUE INDEX "Account_provider_providerAccountId_key" ON "Account"("provider", "providerAccountId");
@@ -283,6 +347,14 @@ CREATE UNIQUE INDEX "GradingScale_yearId_level_key" ON "GradingScale"("yearId", 
 CREATE UNIQUE INDEX "PeriodGrade_courseId_periodId_studentId_key" ON "PeriodGrade"("courseId", "periodId", "studentId");
 CREATE INDEX "PeriodGrade_studentId_periodId_idx" ON "PeriodGrade"("studentId", "periodId");
 CREATE UNIQUE INDEX "PsychologyCase_studentId_key" ON "PsychologyCase"("studentId");
+CREATE UNIQUE INDEX "StudentProfile_userId_key" ON "StudentProfile"("userId");
+CREATE UNIQUE INDEX "StudentProfile_documentNumber_key" ON "StudentProfile"("documentNumber");
+CREATE UNIQUE INDEX "StudentProfile_studentCode_key" ON "StudentProfile"("studentCode");
+CREATE INDEX "StudentProfile_schoolSectionId_idx" ON "StudentProfile"("schoolSectionId");
+CREATE INDEX "StudentGuardian_studentId_idx" ON "StudentGuardian"("studentId");
+CREATE UNIQUE INDEX "IncomeReceipt_receiptNumber_key" ON "IncomeReceipt"("receiptNumber");
+CREATE INDEX "IncomeReceipt_issuedOn_receiptNumber_idx" ON "IncomeReceipt"("issuedOn", "receiptNumber");
+CREATE INDEX "IncomeReceiptLine_receiptId_idx" ON "IncomeReceiptLine"("receiptId");
 CREATE INDEX "PsychologyCase_psychologistId_status_idx" ON "PsychologyCase"("psychologistId", "status");
 CREATE INDEX "PsychologyNote_caseId_attendedOn_idx" ON "PsychologyNote"("caseId", "attendedOn");
 CREATE INDEX "PsychologyAppointment_caseId_startsAt_idx" ON "PsychologyAppointment"("caseId", "startsAt");
@@ -323,4 +395,10 @@ ALTER TABLE "PsychologyCase" ADD CONSTRAINT "PsychologyCase_openedById_fkey" FOR
 ALTER TABLE "PsychologyNote" ADD CONSTRAINT "PsychologyNote_caseId_fkey" FOREIGN KEY ("caseId") REFERENCES "PsychologyCase"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "PsychologyNote" ADD CONSTRAINT "PsychologyNote_authorId_fkey" FOREIGN KEY ("authorId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "PsychologyAppointment" ADD CONSTRAINT "PsychologyAppointment_caseId_fkey" FOREIGN KEY ("caseId") REFERENCES "PsychologyCase"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
 ALTER TABLE "PsychologyMaterial" ADD CONSTRAINT "PsychologyMaterial_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "StudentProfile" ADD CONSTRAINT "StudentProfile_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "StudentProfile" ADD CONSTRAINT "StudentProfile_schoolSectionId_fkey" FOREIGN KEY ("schoolSectionId") REFERENCES "SchoolSection"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "StudentGuardian" ADD CONSTRAINT "StudentGuardian_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
