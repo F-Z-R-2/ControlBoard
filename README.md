@@ -72,13 +72,17 @@ Estas cuentas solo existen después de cargar los datos de demostración en una 
 
 | Perfil | Correo | Contraseña |
 | --- | --- | --- |
-| Superadministrador | `superadmin@controlboard.dev` | `SuperAdmin123!` |
-| Secretaría | `secretaria@controlboard.dev` | `Secretaria123!` |
-| Psicología | `psicologia@controlboard.dev` | `Psicologia123!` |
-| Administrador | `admin@controlboard.dev` | `Admin123!` |
-| Docente | `instructor@controlboard.dev` | `Profe123!` |
-| Estudiante | `estudiante@controlboard.dev` | `Estudiante123!` |
-| Estudiante | `ana@controlboard.dev` | `Estudiante123!` |
+| Superadministrador | `superadmin@controlboard.dev` | `DemoCuenta01!` |
+| Secretaría | `secretaria@controlboard.dev` | `DemoCuenta02!` |
+| Psicología | `psicologia@controlboard.dev` | `DemoCuenta03!` |
+| Administrador | `admin@controlboard.dev` | `DemoCuenta04!` |
+| Docente | `instructor@controlboard.dev` | `DemoCuenta05!` |
+| Estudiante | `estudiante@controlboard.dev` | `DemoCuenta06!` |
+| Estudiante | `ana@controlboard.dev` | `DemoCuenta07!` |
+| Estudiante | `camila@controlboard.dev` | `DemoCuenta08!` |
+| Estudiante | `mateo@controlboard.dev` | `DemoCuenta09!` |
+| Estudiante | `sofia@controlboard.dev` | `DemoCuenta10!` |
+| Estudiante | `lucas@controlboard.dev` | `DemoCuenta11!` |
 
 Los cursos de muestra corresponden a 1.º Medio A: Matemática, Lengua y Literatura, Ciencias Naturales, Historia, Inglés, Tecnología, Artes Visuales y Educación Física.
 

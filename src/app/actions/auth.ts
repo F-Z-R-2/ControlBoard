@@ -52,12 +52,12 @@ export async function loginAction(formData: FormData) {
 }
 
 const demoAccounts = {
-  student: { email: "estudiante@controlboard.dev", password: "Estudiante123!", redirectTo: "/dashboard" },
-  instructor: { email: "instructor@controlboard.dev", password: "Profe123!", redirectTo: "/dashboard" },
-  secretary: { email: "secretaria@controlboard.dev", password: "Secretaria123!", redirectTo: "/secretariat" },
-  psychologist: { email: "psicologia@controlboard.dev", password: "Psicologia123!", redirectTo: "/psychology" },
-  admin: { email: "admin@controlboard.dev", password: "Admin123!", redirectTo: "/dashboard" },
-  superAdmin: { email: "superadmin@controlboard.dev", password: "SuperAdmin123!", redirectTo: "/dashboard" },
+  student: { email: "estudiante@controlboard.dev", password: "DemoCuenta06!", redirectTo: "/dashboard" },
+  instructor: { email: "instructor@controlboard.dev", password: "DemoCuenta05!", redirectTo: "/dashboard" },
+  secretary: { email: "secretaria@controlboard.dev", password: "DemoCuenta02!", redirectTo: "/secretariat" },
+  psychologist: { email: "psicologia@controlboard.dev", password: "DemoCuenta03!", redirectTo: "/psychology" },
+  admin: { email: "admin@controlboard.dev", password: "DemoCuenta04!", redirectTo: "/dashboard" },
+  superAdmin: { email: "superadmin@controlboard.dev", password: "DemoCuenta01!", redirectTo: "/dashboard" },
 } as const;
 
 export async function demoLoginAction(profile: string, _formData: FormData) {

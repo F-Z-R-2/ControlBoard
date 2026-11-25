@@ -231,22 +231,32 @@ async function main() {
   await db.query("SELECT 1");
 
   const passwords = {
-    admin: await bcrypt.hash("Admin123!", 10),
-    instructor: await bcrypt.hash("Profe123!", 10),
-    student: await bcrypt.hash("Estudiante123!", 10),
+    superAdmin: "DemoCuenta01!",
+    secretary: "DemoCuenta02!",
+    psychologist: "DemoCuenta03!",
+    admin: "DemoCuenta04!",
+    instructor: "DemoCuenta05!",
+    students: [
+      "DemoCuenta06!",
+      "DemoCuenta07!",
+      "DemoCuenta08!",
+      "DemoCuenta09!",
+      "DemoCuenta10!",
+      "DemoCuenta11!",
+    ],
   };
 
   await upsertUser(
     "admin@controlboard.dev",
     "Administración",
-    passwords.admin,
+    await bcrypt.hash(passwords.admin, 10),
     "ADMIN",
   );
 
   for (const account of [
-    { email: "superadmin@controlboard.dev", name: "Superadministración", role: "SUPER_ADMIN" as Role, password: "SuperAdmin123!" },
-    { email: "secretaria@controlboard.dev", name: "Secretaría", role: "SECRETARY" as Role, password: "Secretaria123!" },
-    { email: "psicologia@controlboard.dev", name: "Psicología", role: "PSYCHOLOGIST" as Role, password: "Psicologia123!" },
+    { email: "superadmin@controlboard.dev", name: "Superadministración", role: "SUPER_ADMIN" as Role, password: passwords.superAdmin },
+    { email: "secretaria@controlboard.dev", name: "Secretaría", role: "SECRETARY" as Role, password: passwords.secretary },
+    { email: "psicologia@controlboard.dev", name: "Psicología", role: "PSYCHOLOGIST" as Role, password: passwords.psychologist },
   ]) {
     await upsertUser(
       account.email,
@@ -259,23 +269,28 @@ async function main() {
   const instructorId = await upsertUser(
     "instructor@controlboard.dev",
     "Laura Méndez",
-    passwords.instructor,
+    await bcrypt.hash(passwords.instructor, 10),
     "INSTRUCTOR",
   );
 
   const studentIds: string[] = [];
   const studentSeeds = [
-    { name: "Diego Ramírez", email: "estudiante@controlboard.dev" },
-    { name: "Ana Torres", email: "ana@controlboard.dev" },
-    { name: "Camila Rojas", email: "camila@controlboard.dev" },
-    { name: "Mateo Silva", email: "mateo@controlboard.dev" },
-    { name: "Sofía Vega", email: "sofia@controlboard.dev" },
-    { name: "Lucas Herrera", email: "lucas@controlboard.dev" },
+    { name: "Diego Ramírez", email: "estudiante@controlboard.dev", password: passwords.students[0] },
+    { name: "Ana Torres", email: "ana@controlboard.dev", password: passwords.students[1] },
+    { name: "Camila Rojas", email: "camila@controlboard.dev", password: passwords.students[2] },
+    { name: "Mateo Silva", email: "mateo@controlboard.dev", password: passwords.students[3] },
+    { name: "Sofía Vega", email: "sofia@controlboard.dev", password: passwords.students[4] },
+    { name: "Lucas Herrera", email: "lucas@controlboard.dev", password: passwords.students[5] },
   ];
 
   for (const seed of studentSeeds) {
     studentIds.push(
-      await upsertUser(seed.email, seed.name, passwords.student, "STUDENT"),
+      await upsertUser(
+        seed.email,
+        seed.name,
+        await bcrypt.hash(seed.password, 10),
+        "STUDENT",
+      ),
     );
   }
 
@@ -658,13 +673,17 @@ async function main() {
   }
 
   console.log("Seed completado.");
-  console.log("Admin: admin@controlboard.dev / Admin123!");
-  console.log("Profesor: instructor@controlboard.dev / Profe123!");
-  console.log("Estudiante: estudiante@controlboard.dev / Estudiante123!");
-  console.log("Estudiante 2: ana@controlboard.dev / Estudiante123!");
-  console.log("Secretaría: secretaria@controlboard.dev / Secretaria123!");
-  console.log("Psicología: psicologia@controlboard.dev / Psicologia123!");
-  console.log("Superadministrador: superadmin@controlboard.dev / SuperAdmin123!");
+  console.log("Superadministrador: superadmin@controlboard.dev / DemoCuenta01!");
+  console.log("Secretaría: secretaria@controlboard.dev / DemoCuenta02!");
+  console.log("Psicología: psicologia@controlboard.dev / DemoCuenta03!");
+  console.log("Administrador: admin@controlboard.dev / DemoCuenta04!");
+  console.log("Docente: instructor@controlboard.dev / DemoCuenta05!");
+  console.log("Estudiante: estudiante@controlboard.dev / DemoCuenta06!");
+  console.log("Estudiante: ana@controlboard.dev / DemoCuenta07!");
+  console.log("Estudiante: camila@controlboard.dev / DemoCuenta08!");
+  console.log("Estudiante: mateo@controlboard.dev / DemoCuenta09!");
+  console.log("Estudiante: sofia@controlboard.dev / DemoCuenta10!");
+  console.log("Estudiante: lucas@controlboard.dev / DemoCuenta11!");
   console.log(`Cursos listos: ${courses.length}`);
   console.log(
     `Tareas listas: ${demoCourses.reduce((total, course) => total + course.assignments.length, 0)}`,
