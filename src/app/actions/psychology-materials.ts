@@ -1,7 +1,8 @@
 "use server";
 
-import { put } from "@vercel/blob";
+import { del, put } from "@vercel/blob";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import type { ActionState } from "@/lib/action-state";
 import { db, newId } from "@/lib/db";
@@ -12,17 +13,23 @@ const maxFileSize = 4 * 1024 * 1024;
 const materialSchema = z.object({
   title: z.string().trim().min(3, "Escribe un nombre de al menos 3 caracteres").max(140, "El nombre no puede superar 140 caracteres"),
 });
+const materialIdSchema = z.string().min(1, "Ficha inválida");
 
-export async function uploadPsychologyMaterialAction(
-  _prevState: ActionState,
-  formData: FormData,
-): Promise<ActionState> {
+async function getMaterialManager() {
   const current = await requireUser();
   const users = await db.sql<{ id: string; role: string; isActive: boolean }>`
     SELECT "id", "role", "isActive" FROM "User" WHERE "id" = ${current.id} LIMIT 1
   `;
   const user = users[0];
-  if (!user?.isActive || !canManagePsychologyMaterials(user.role)) {
+  return user?.isActive && canManagePsychologyMaterials(user.role) ? user : null;
+}
+
+export async function uploadPsychologyMaterialAction(
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const user = await getMaterialManager();
+  if (!user) {
     return { error: "No tienes permiso para subir fichas" };
   }
 
@@ -64,4 +71,65 @@ export async function uploadPsychologyMaterialAction(
 
   revalidatePath("/psychology");
   return { success: "Ficha subida correctamente" };
+}
+
+export async function renamePsychologyMaterialAction(formData: FormData) {
+  const user = await getMaterialManager();
+  if (!user) {
+    redirect("/psychology?error=No%20tienes%20permiso%20para%20editar%20fichas");
+  }
+
+  const parsedId = materialIdSchema.safeParse(formData.get("id"));
+  if (!parsedId.success) {
+    redirect(`/psychology?error=${encodeURIComponent(parsedId.error.issues[0]?.message ?? "Ficha inválida")}`);
+  }
+
+  const parsed = materialSchema.safeParse({ title: formData.get("title") });
+  if (!parsed.success) {
+    redirect(`/psychology?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Datos inválidos")}`);
+  }
+
+  const updated = await db.sql<{ id: string }>`
+    UPDATE "PsychologyMaterial"
+    SET "title" = ${parsed.data.title}
+    WHERE "id" = ${parsedId.data}
+    RETURNING "id"
+  `;
+  if (!updated[0]) {
+    redirect("/psychology?error=Ficha%20no%20encontrada");
+  }
+
+  revalidatePath("/psychology");
+  redirect("/psychology?success=Nombre%20actualizado");
+}
+
+export async function deletePsychologyMaterialAction(formData: FormData) {
+  const user = await getMaterialManager();
+  if (!user) {
+    redirect("/psychology?error=No%20tienes%20permiso%20para%20eliminar%20fichas");
+  }
+
+  const parsedId = materialIdSchema.safeParse(formData.get("id"));
+  if (!parsedId.success) {
+    redirect(`/psychology?error=${encodeURIComponent(parsedId.error.issues[0]?.message ?? "Ficha inválida")}`);
+  }
+
+  const materials = await db.sql<{ url: string }>`
+    SELECT "url" FROM "PsychologyMaterial" WHERE "id" = ${parsedId.data} LIMIT 1
+  `;
+  const material = materials[0];
+  if (!material) {
+    redirect("/psychology?error=Ficha%20no%20encontrada");
+  }
+
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  if (!token) {
+    redirect("/psychology?error=Falta%20configurar%20Blob%20para%20eliminar%20el%20archivo");
+  }
+
+  await del(material.url, { token });
+  await db.sql`DELETE FROM "PsychologyMaterial" WHERE "id" = ${parsedId.data}`;
+
+  revalidatePath("/psychology");
+  redirect("/psychology?success=Ficha%20eliminada");
 }
